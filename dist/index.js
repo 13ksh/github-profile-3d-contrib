@@ -81,7 +81,7 @@ const aggregateUserInfo = (response) => {
     const contributesLanguage = {};
     const languagesByDay = {};
     user.contributionsCollection.commitContributionsByRepository.forEach((repo) => {
-        var _a, _b, _c;
+        var _a, _b;
         const language = ((_a = repo.repository.primaryLanguage) === null || _a === void 0 ? void 0 : _a.name) || 'other';
         const color = ((_b = repo.repository.primaryLanguage) === null || _b === void 0 ? void 0 : _b.color) || OTHER_COLOR;
         const contributions = repo.contributions.totalCount;
@@ -99,11 +99,7 @@ const aggregateUserInfo = (response) => {
             }
         }
         const dayCounts = {};
-        const pages = [
-            ...(repo.contributions.nodes || []),
-            ...(((_c = repo.olderContributions) === null || _c === void 0 ? void 0 : _c.nodes) || []),
-        ];
-        for (const node of pages) {
+        for (const node of repo.contributions.nodes || []) {
             const dayKey = toUtcDateKey(node.occurredAt);
             dayCounts[dayKey] = Math.max(dayCounts[dayKey] || 0, node.commitCount);
         }
@@ -1432,6 +1428,7 @@ const fetchFirst = async (token, userName, year = null) => {
                         }
                         commitContributionsByRepository(maxRepositories: ${maxReposOneQuery}) {
                             repository {
+                                nameWithOwner
                                 primaryLanguage {
                                     name
                                     color
@@ -1439,12 +1436,6 @@ const fetchFirst = async (token, userName, year = null) => {
                             }
                             contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {
                                 totalCount
-                                nodes {
-                                    occurredAt
-                                    commitCount
-                                }
-                            }
-                            olderContributions: contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: ASC}) {
                                 nodes {
                                     occurredAt
                                     commitCount
@@ -1477,6 +1468,110 @@ const fetchFirst = async (token, userName, year = null) => {
     return response.data;
 };
 exports.fetchFirst = fetchFirst;
+const toDateKey = (value) => value.slice(0, 10);
+const repoKey = (repo) => {
+    var _a;
+    return repo.repository.nameWithOwner ||
+        ((_a = repo.repository.primaryLanguage) === null || _a === void 0 ? void 0 : _a.name) ||
+        'unknown';
+};
+const mergeCommitRepos = (base, extra) => {
+    const index = new Map(base.map((repo) => [repoKey(repo), repo]));
+    for (const repo of extra) {
+        const key = repoKey(repo);
+        const target = index.get(key);
+        if (!target) {
+            base.push(repo);
+            index.set(key, repo);
+            continue;
+        }
+        const counts = new Map();
+        for (const node of target.contributions.nodes || []) {
+            counts.set(toDateKey(node.occurredAt), node.commitCount);
+        }
+        for (const node of repo.contributions.nodes || []) {
+            const day = toDateKey(node.occurredAt);
+            counts.set(day, Math.max(counts.get(day) || 0, node.commitCount));
+        }
+        target.contributions.nodes = [...counts.entries()].map(([occurredAt, commitCount]) => ({ occurredAt, commitCount }));
+    }
+};
+const oldestCappedDay = (repos) => {
+    let oldest = null;
+    for (const repo of repos) {
+        const nodes = repo.contributions.nodes || [];
+        if (nodes.length < 100) {
+            continue;
+        }
+        for (const node of nodes) {
+            const time = new Date(node.occurredAt).getTime();
+            if (oldest === null || time < oldest) {
+                oldest = time;
+            }
+        }
+    }
+    return oldest;
+};
+const fetchCommitPage = async (token, userName, from, to) => {
+    var _a, _b;
+    const headers = {
+        Authorization: `bearer ${token}`,
+    };
+    const request = {
+        query: `
+            query($login: String!, $from: DateTime!, $to: DateTime!) {
+                user(login: $login) {
+                    contributionsCollection(from: $from, to: $to) {
+                        commitContributionsByRepository(maxRepositories: ${maxReposOneQuery}) {
+                            repository {
+                                nameWithOwner
+                                primaryLanguage {
+                                    name
+                                    color
+                                }
+                            }
+                            contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {
+                                nodes {
+                                    occurredAt
+                                    commitCount
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        `.replace(/\s+/g, ' '),
+        variables: { login: userName, from, to },
+    };
+    const response = await axios_1.default.post(exports.URL, request, {
+        headers,
+    });
+    if ((_a = response.data.errors) === null || _a === void 0 ? void 0 : _a.length) {
+        throw new Error(response.data.errors[0].message);
+    }
+    return (((_b = response.data.data) === null || _b === void 0 ? void 0 : _b.user.contributionsCollection.commitContributionsByRepository) || []);
+};
+const paginateCommitDays = async (token, userName, result) => {
+    const days = result.user.contributionsCollection.contributionCalendar.weeks.flatMap((week) => week.contributionDays);
+    if (days.length === 0) {
+        return;
+    }
+    const from = new Date(days[0].date).toISOString();
+    const repos = result.user.contributionsCollection.commitContributionsByRepository;
+    let page = repos;
+    for (let i = 0; i < 20; i++) {
+        const oldest = oldestCappedDay(page);
+        if (oldest === null) {
+            return;
+        }
+        const nextTo = new Date(oldest - 1000).toISOString();
+        if (nextTo <= from) {
+            return;
+        }
+        page = await fetchCommitPage(token, userName, from, nextTo);
+        mergeCommitRepos(repos, page);
+    }
+};
 const fetchNext = async (token, userName, cursor) => {
     const headers = {
         Authorization: `bearer ${token}`,
@@ -1529,6 +1624,9 @@ const fetchData = async (token, userName, maxRepos, year = null) => {
                 break;
             }
         }
+    }
+    if (result) {
+        await paginateCommitDays(token, userName, result);
     }
     return res1;
 };

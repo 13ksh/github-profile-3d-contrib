@@ -76,11 +76,7 @@ export const aggregateUserInfo = (
             }
 
             const dayCounts: { [date: string]: number } = {};
-            const pages = [
-                ...(repo.contributions.nodes || []),
-                ...(repo.olderContributions?.nodes || []),
-            ];
-            for (const node of pages) {
+            for (const node of repo.contributions.nodes || []) {
                 const dayKey = toUtcDateKey(node.occurredAt);
                 dayCounts[dayKey] = Math.max(
                     dayCounts[dayKey] || 0,
