@@ -56,41 +56,54 @@ export const aggregateUserInfo = (
     const languagesByDay: {
         [date: string]: { [language: string]: type.LangInfo };
     } = {};
-    user.contributionsCollection.commitContributionsByRepository
-        .filter((repo) => repo.repository.primaryLanguage)
-        .forEach((repo) => {
-            const language = repo.repository.primaryLanguage?.name || '';
+    user.contributionsCollection.commitContributionsByRepository.forEach(
+        (repo) => {
+            const language = repo.repository.primaryLanguage?.name || 'other';
             const color = repo.repository.primaryLanguage?.color || OTHER_COLOR;
             const contributions = repo.contributions.totalCount;
 
-            const info = contributesLanguage[language];
-            if (info) {
-                info.contributions += contributions;
-            } else {
-                contributesLanguage[language] = {
-                    language: language,
-                    color: color,
-                    contributions: contributions,
-                };
+            if (language !== 'other') {
+                const info = contributesLanguage[language];
+                if (info) {
+                    info.contributions += contributions;
+                } else {
+                    contributesLanguage[language] = {
+                        language: language,
+                        color: color,
+                        contributions: contributions,
+                    };
+                }
             }
 
-            for (const node of repo.contributions.nodes || []) {
+            const dayCounts: { [date: string]: number } = {};
+            const pages = [
+                ...(repo.contributions.nodes || []),
+                ...(repo.olderContributions?.nodes || []),
+            ];
+            for (const node of pages) {
                 const dayKey = toUtcDateKey(node.occurredAt);
+                dayCounts[dayKey] = Math.max(
+                    dayCounts[dayKey] || 0,
+                    node.commitCount,
+                );
+            }
+            for (const [dayKey, commitCount] of Object.entries(dayCounts)) {
                 if (!languagesByDay[dayKey]) {
                     languagesByDay[dayKey] = {};
                 }
                 const dayLang = languagesByDay[dayKey][language];
                 if (dayLang) {
-                    dayLang.contributions += node.commitCount;
+                    dayLang.contributions += commitCount;
                 } else {
                     languagesByDay[dayKey][language] = {
                         language: language,
                         color: color,
-                        contributions: node.commitCount,
+                        contributions: commitCount,
                     };
                 }
             }
-        });
+        },
+    );
     const calendar = user.contributionsCollection.contributionCalendar.weeks
         .flatMap((week) => week.contributionDays)
         .map((week) => {
@@ -102,7 +115,10 @@ export const aggregateUserInfo = (
                     week.contributionLevel,
                 ),
                 date,
-                languages: langColors.stackFromLangs(Object.values(dayLangs)),
+                languages: langColors.stackFromLangs(
+                    Object.values(dayLangs),
+                    true,
+                ),
             };
         });
     const languages: Array<type.LangInfo> = Object.values(

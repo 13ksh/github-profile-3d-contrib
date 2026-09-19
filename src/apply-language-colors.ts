@@ -13,14 +13,20 @@ export const languagePatternId = (language: string, color: string): string => {
 
 export const stackFromLangs = (
     langs: Array<Pick<type.LangInfo, 'language' | 'color' | 'contributions'>>,
+    includeOther = false,
 ): type.LangLayer[] => {
-    const source = langs.filter(
-        (lang) =>
-            lang.language.toLowerCase() !== 'other' &&
-            !!lang.color &&
-            lang.color !== OTHER_COLOR &&
-            lang.contributions > 0,
-    );
+    const source = langs.filter((lang) => {
+        if (lang.contributions <= 0 || !lang.color) {
+            return false;
+        }
+        if (
+            !includeOther &&
+            (lang.language.toLowerCase() === 'other' || lang.color === OTHER_COLOR)
+        ) {
+            return false;
+        }
+        return true;
+    });
     const total = source.reduce((sum, lang) => sum + lang.contributions, 0);
     if (total <= 0) {
         return [];

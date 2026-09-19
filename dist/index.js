@@ -80,38 +80,46 @@ const aggregateUserInfo = (response) => {
     const user = response.data.user;
     const contributesLanguage = {};
     const languagesByDay = {};
-    user.contributionsCollection.commitContributionsByRepository
-        .filter((repo) => repo.repository.primaryLanguage)
-        .forEach((repo) => {
-        var _a, _b;
-        const language = ((_a = repo.repository.primaryLanguage) === null || _a === void 0 ? void 0 : _a.name) || '';
+    user.contributionsCollection.commitContributionsByRepository.forEach((repo) => {
+        var _a, _b, _c;
+        const language = ((_a = repo.repository.primaryLanguage) === null || _a === void 0 ? void 0 : _a.name) || 'other';
         const color = ((_b = repo.repository.primaryLanguage) === null || _b === void 0 ? void 0 : _b.color) || OTHER_COLOR;
         const contributions = repo.contributions.totalCount;
-        const info = contributesLanguage[language];
-        if (info) {
-            info.contributions += contributions;
+        if (language !== 'other') {
+            const info = contributesLanguage[language];
+            if (info) {
+                info.contributions += contributions;
+            }
+            else {
+                contributesLanguage[language] = {
+                    language: language,
+                    color: color,
+                    contributions: contributions,
+                };
+            }
         }
-        else {
-            contributesLanguage[language] = {
-                language: language,
-                color: color,
-                contributions: contributions,
-            };
-        }
-        for (const node of repo.contributions.nodes || []) {
+        const dayCounts = {};
+        const pages = [
+            ...(repo.contributions.nodes || []),
+            ...(((_c = repo.olderContributions) === null || _c === void 0 ? void 0 : _c.nodes) || []),
+        ];
+        for (const node of pages) {
             const dayKey = toUtcDateKey(node.occurredAt);
+            dayCounts[dayKey] = Math.max(dayCounts[dayKey] || 0, node.commitCount);
+        }
+        for (const [dayKey, commitCount] of Object.entries(dayCounts)) {
             if (!languagesByDay[dayKey]) {
                 languagesByDay[dayKey] = {};
             }
             const dayLang = languagesByDay[dayKey][language];
             if (dayLang) {
-                dayLang.contributions += node.commitCount;
+                dayLang.contributions += commitCount;
             }
             else {
                 languagesByDay[dayKey][language] = {
                     language: language,
                     color: color,
-                    contributions: node.commitCount,
+                    contributions: commitCount,
                 };
             }
         }
@@ -125,7 +133,7 @@ const aggregateUserInfo = (response) => {
             contributionCount: week.contributionCount,
             contributionLevel: toNumberContributionLevel(week.contributionLevel),
             date,
-            languages: langColors.stackFromLangs(Object.values(dayLangs)),
+            languages: langColors.stackFromLangs(Object.values(dayLangs), true),
         };
     });
     const languages = Object.values(contributesLanguage).sort((obj1, obj2) => -compare(obj1.contributions, obj2.contributions));
@@ -171,11 +179,17 @@ const languagePatternId = (language, color) => {
     return `lang_${name}_${hex}`;
 };
 exports.languagePatternId = languagePatternId;
-const stackFromLangs = (langs) => {
-    const source = langs.filter((lang) => lang.language.toLowerCase() !== 'other' &&
-        !!lang.color &&
-        lang.color !== OTHER_COLOR &&
-        lang.contributions > 0);
+const stackFromLangs = (langs, includeOther = false) => {
+    const source = langs.filter((lang) => {
+        if (lang.contributions <= 0 || !lang.color) {
+            return false;
+        }
+        if (!includeOther &&
+            (lang.language.toLowerCase() === 'other' || lang.color === OTHER_COLOR)) {
+            return false;
+        }
+        return true;
+    });
     const total = source.reduce((sum, lang) => sum + lang.contributions, 0);
     if (total <= 0) {
         return [];
@@ -619,14 +633,19 @@ const create3DContrib = (svg, userInfo, x, y, width, height, settings, isForcedA
         const baseX = offsetX + (week - dayOfWeek) * dx;
         const baseY = offsetY + (week + dayOfWeek) * dy;
         // ref. https://github.com/yoshi389111/github-profile-3d-contrib/issues/27
-        const calHeight = Math.log10(cal.contributionCount / 20 + 1) * 144 + 3;
-        const contribLevel = cal.contributionLevel;
         const dayStack = cal.languages;
+        const isLanguageBrick = settings.type === 'bitmap' && dayStack.length > 0;
+        const calHeight = isLanguageBrick
+            ? Math.log10(cal.contributionCount / 20 + 1) * 144 + 3
+            : settings.type === 'bitmap'
+                ? 3
+                : Math.log10(cal.contributionCount / 20 + 1) * 144 + 3;
+        const contribLevel = isLanguageBrick ? cal.contributionLevel : settings.type === 'bitmap' ? 0 : cal.contributionLevel;
         const isAnimate = settings.growingAnimation || isForcedAnimation;
         const bar = group
             .append('g')
             .attr('transform', `translate(${util.toFixed(baseX)} ${util.toFixed(baseY - calHeight)})`);
-        if (isAnimate && contribLevel !== 0) {
+        if (isAnimate && isLanguageBrick) {
             bar.append('animateTransform')
                 .attr('attributeName', 'transform')
                 .attr('type', 'translate')
@@ -635,7 +654,7 @@ const create3DContrib = (svg, userInfo, x, y, width, height, settings, isForcedA
                 .attr('fill', 'freeze')
                 .attr('repeatCount', '1');
         }
-        if (settings.type === 'bitmap' && dayStack.length > 0 && contribLevel !== 0) {
+        if (isLanguageBrick && settings.type === 'bitmap') {
             drawStackedLanguageBrick(bar, calHeight, dayStack, settings, dxx, dyy, isAnimate);
         }
         else {
@@ -1420,6 +1439,12 @@ const fetchFirst = async (token, userName, year = null) => {
                             }
                             contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {
                                 totalCount
+                                nodes {
+                                    occurredAt
+                                    commitCount
+                                }
+                            }
+                            olderContributions: contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: ASC}) {
                                 nodes {
                                     occurredAt
                                     commitCount

@@ -517,9 +517,15 @@ export const create3DContrib = (
         const baseX = offsetX + (week - dayOfWeek) * dx;
         const baseY = offsetY + (week + dayOfWeek) * dy;
         // ref. https://github.com/yoshi389111/github-profile-3d-contrib/issues/27
-        const calHeight = Math.log10(cal.contributionCount / 20 + 1) * 144 + 3;
-        const contribLevel = cal.contributionLevel;
         const dayStack = cal.languages;
+        const isLanguageBrick =
+            settings.type === 'bitmap' && dayStack.length > 0;
+        const calHeight = isLanguageBrick
+            ? Math.log10(cal.contributionCount / 20 + 1) * 144 + 3
+            : settings.type === 'bitmap'
+              ? 3
+              : Math.log10(cal.contributionCount / 20 + 1) * 144 + 3;
+        const contribLevel = isLanguageBrick ? cal.contributionLevel : settings.type === 'bitmap' ? 0 : cal.contributionLevel;
 
         const isAnimate = settings.growingAnimation || isForcedAnimation;
 
@@ -531,7 +537,7 @@ export const create3DContrib = (
                     baseY - calHeight,
                 )})`,
             );
-        if (isAnimate && contribLevel !== 0) {
+        if (isAnimate && isLanguageBrick) {
             bar.append('animateTransform')
                 .attr('attributeName', 'transform')
                 .attr('type', 'translate')
@@ -548,7 +554,7 @@ export const create3DContrib = (
                 .attr('repeatCount', '1');
         }
 
-        if (settings.type === 'bitmap' && dayStack.length > 0 && contribLevel !== 0) {
+        if (isLanguageBrick && settings.type === 'bitmap') {
             drawStackedLanguageBrick(
                 bar,
                 calHeight,

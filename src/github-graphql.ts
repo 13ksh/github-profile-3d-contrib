@@ -13,6 +13,12 @@ export type CommitContributionsByRepository = Array<{
             commitCount: number;
         }>;
     };
+    olderContributions?: {
+        nodes?: Array<{
+            occurredAt: string;
+            commitCount: number;
+        }>;
+    };
     repository: {
         primaryLanguage: {
             name: string;
@@ -120,6 +126,12 @@ export const fetchFirst = async (
                             }
                             contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {
                                 totalCount
+                                nodes {
+                                    occurredAt
+                                    commitCount
+                                }
+                            }
+                            olderContributions: contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: ASC}) {
                                 nodes {
                                     occurredAt
                                     commitCount
