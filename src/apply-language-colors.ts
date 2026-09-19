@@ -1,46 +1,35 @@
-import * as d3 from 'd3';
 import * as type from './type';
 
-const EMPTY_COLOR = '#ebedf0';
+const OTHER_RATIO = 0.001;
 
-export const languageGrassColors = (userInfo: type.UserInfo): [string, string, string, string, string] => {
-    const langs = userInfo.contributesLanguage.filter(
+export type LangLayer = {
+    language: string;
+    color: string;
+    ratio: number;
+};
+
+export const languageStack = (userInfo: type.UserInfo): LangLayer[] => {
+    const source = userInfo.contributesLanguage.filter(
         (lang) =>
             lang.language.toLowerCase() !== 'other' &&
             !!lang.color &&
             lang.color !== '#444444',
     );
-    if (langs.length === 0) {
-        return ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
+    const listedSum = source.reduce((sum, lang) => sum + lang.contributions, 0);
+    const total = listedSum || userInfo.totalCommitContributions;
+    if (total <= 0) {
+        return [];
     }
-    const top = langs.slice(0, 4);
-    while (top.length < 4) {
-        const last = top[top.length - 1];
-        top.push(last);
+    const kept = source.filter((lang) => lang.contributions / total >= OTHER_RATIO);
+    const keptSum = kept.reduce((sum, lang) => sum + lang.contributions, 0);
+    if (keptSum <= 0) {
+        return [];
     }
-    return [
-        EMPTY_COLOR,
-        top[3].color,
-        top[2].color,
-        top[1].color,
-        top[0].color,
-    ];
-};
-
-const paintBitmap = (
-    settings: type.BitmapPatternSettings,
-    colors: [string, string, string, string, string],
-): void => {
-    settings.contribPatterns.forEach((pattern, i) => {
-        const color = colors[i];
-        pattern.top.backgroundColor = color;
-        pattern.top.foregroundColor = d3.rgb(color).darker(1.2).toString();
-        delete pattern.left.backgroundColor;
-        delete pattern.left.foregroundColor;
-        delete pattern.right.backgroundColor;
-        delete pattern.right.foregroundColor;
-    });
-    settings.radarColor = colors[4];
+    return kept.map((lang) => ({
+        language: lang.language,
+        color: lang.color,
+        ratio: lang.contributions / keptSum,
+    }));
 };
 
 export const withLanguageGrassColors = (
@@ -54,18 +43,9 @@ export const withLanguageGrassColors = (
         return settings;
     }
     const cloned = JSON.parse(JSON.stringify(settings)) as type.Settings;
-    const colors = languageGrassColors(userInfo);
-    if (cloned.type === 'bitmap') {
-        paintBitmap(cloned, colors);
-    } else if (cloned.type === 'normal') {
-        cloned.contribColors = colors;
-        cloned.radarColor = colors[4];
-    } else if (cloned.type === 'season') {
-        cloned.contribColors1 = colors;
-        cloned.contribColors2 = colors;
-        cloned.contribColors3 = colors;
-        cloned.contribColors4 = colors;
-        cloned.radarColor = colors[4];
+    const stack = languageStack(userInfo);
+    if (stack[0] && 'radarColor' in cloned) {
+        cloned.radarColor = stack[0].color;
     }
     return cloned;
 };

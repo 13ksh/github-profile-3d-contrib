@@ -53,7 +53,7 @@ export const createSvg = (
         ].join('\n'),
     );
 
-    contrib.addDefines(svg, resolved);
+    contrib.addDefines(svg, resolved, userInfo);
 
     // background
     svg.append('rect')

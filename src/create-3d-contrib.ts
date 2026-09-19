@@ -1,8 +1,12 @@
 import * as d3 from 'd3';
 import * as util from './utils';
 import * as type from './type';
+import { languageStack } from './apply-language-colors';
+import type { LangLayer } from './apply-language-colors';
 
 const ANGLE = 30;
+const DARKER_LEFT = 0.5;
+const DARKER_RIGHT = 1;
 
 const toEpochDays = (date: Date): number =>
     Math.floor(date.getTime() / (24 * 60 * 60 * 1000));
@@ -107,6 +111,23 @@ const addBitmapPattern = (
 
 const atan = (value: number) => (Math.atan(value) * 360) / 2 / Math.PI;
 
+const paintBitmapPath = (panelPattern: type.PanelPattern): string => {
+    const width = Math.max(1, panelPattern.width);
+    const path = d3.path();
+    for (const [y, bitmapValue] of panelPattern.bitmap.entries()) {
+        const bitmap =
+            typeof bitmapValue === 'string'
+                ? parseInt(bitmapValue, 16)
+                : bitmapValue;
+        for (let x = 0; x < width; x++) {
+            if ((bitmap & (1 << (width - x - 1))) !== 0) {
+                path.rect(x, y, 1, 1);
+            }
+        }
+    }
+    return path.toString();
+};
+
 const addPatternForBitmap = (
     defs: d3.Selection<SVGDefsElement, unknown, null, unknown>,
     panelPattern: type.PanelPattern,
@@ -130,36 +151,277 @@ const addPatternForBitmap = (
         .attr('width', width)
         .attr('height', height)
         .attr('class', `cont-${panel}-bg-${contributionLevel}`);
-    const path = d3.path();
-    for (const [y, bitmapValue] of panelPattern.bitmap.entries()) {
-        const bitmap =
-            typeof bitmapValue === 'string'
-                ? parseInt(bitmapValue, 16)
-                : bitmapValue;
-        for (let x = 0; x < width; x++) {
-            if ((bitmap & (1 << (width - x - 1))) !== 0) {
-                path.rect(x, y, 1, 1);
-            }
-        }
-    }
     pattern
         .append('path')
         .attr('stroke', 'none')
         .attr('class', `cont-${panel}-fg-${contributionLevel}`)
-        .attr('d', path.toString());
+        .attr('d', paintBitmapPath(panelPattern));
+};
+
+const addLanguageBitmapPattern = (
+    defs: d3.Selection<SVGDefsElement, unknown, null, unknown>,
+    panelPattern: type.PanelPattern,
+    patternId: string,
+    color: string,
+    panel: PanelType,
+): void => {
+    const width = Math.max(1, panelPattern.width);
+    const height = Math.max(1, panelPattern.bitmap.length);
+    const darker = panel === 'top' ? 0 : panel === 'left' ? DARKER_LEFT : DARKER_RIGHT;
+    const bg = d3.rgb(color).darker(darker).toString();
+    const fg = d3.rgb(color).darker(darker + 0.8).toString();
+    const pattern = defs
+        .append('pattern')
+        .attr('id', patternId)
+        .attr('x', 0)
+        .attr('y', 0)
+        .attr('width', width)
+        .attr('height', height)
+        .attr('patternUnits', 'userSpaceOnUse');
+    pattern
+        .append('rect')
+        .attr('x', 0)
+        .attr('y', 0)
+        .attr('width', width)
+        .attr('height', height)
+        .attr('fill', bg);
+    pattern
+        .append('path')
+        .attr('stroke', 'none')
+        .attr('fill', fg)
+        .attr('d', paintBitmapPath(panelPattern));
 };
 
 export const addDefines = (
     svg: d3.Selection<SVGSVGElement, unknown, null, unknown>,
     settings: type.Settings,
+    userInfo?: type.UserInfo,
 ): void => {
-    if (settings.type === 'bitmap') {
-        const defs = svg.append('defs');
-        for (const [contribLevel, info] of settings.contribPatterns.entries()) {
-            addPatternForBitmap(defs, info.top, contribLevel, 'top');
-            addPatternForBitmap(defs, info.left, contribLevel, 'left');
-            addPatternForBitmap(defs, info.right, contribLevel, 'right');
+    if (settings.type !== 'bitmap') {
+        return;
+    }
+    const defs = svg.append('defs');
+    for (const [contribLevel, info] of settings.contribPatterns.entries()) {
+        addPatternForBitmap(defs, info.top, contribLevel, 'top');
+        addPatternForBitmap(defs, info.left, contribLevel, 'left');
+        addPatternForBitmap(defs, info.right, contribLevel, 'right');
+    }
+    if (!userInfo) {
+        return;
+    }
+    const stack = languageStack(userInfo);
+    const template = settings.contribPatterns[1] || settings.contribPatterns[0];
+    stack.forEach((layer, i) => {
+        addLanguageBitmapPattern(
+            defs,
+            template.top,
+            `pattern_lang_${i}_top`,
+            layer.color,
+            'top',
+        );
+        addLanguageBitmapPattern(
+            defs,
+            template.left,
+            `pattern_lang_${i}_left`,
+            layer.color,
+            'left',
+        );
+        addLanguageBitmapPattern(
+            defs,
+            template.right,
+            `pattern_lang_${i}_right`,
+            layer.color,
+            'right',
+        );
+    });
+};
+
+const paintPanel = (
+    panel: d3.Selection<SVGRectElement, unknown, null, unknown>,
+    contribLevel: number,
+    face: PanelType,
+    settings: type.FullSettings,
+    date: Date,
+    week: number,
+): void => {
+    if (settings.type === 'normal') {
+        addNormalColor(panel, contribLevel, face);
+    } else if (settings.type === 'season') {
+        addSeasonColor(panel, contribLevel, face, date);
+    } else if (settings.type === 'rainbow') {
+        addRainbowColor(panel, contribLevel, face, settings, week);
+    } else if (settings.type === 'bitmap') {
+        addBitmapPattern(panel, contribLevel, face);
+    }
+};
+
+const drawSolidBrick = (
+    bar: d3.Selection<SVGGElement, unknown, null, unknown>,
+    calHeight: number,
+    contribLevel: number,
+    settings: type.FullSettings,
+    dxx: number,
+    dyy: number,
+    isAnimate: boolean,
+    date: Date,
+    week: number,
+): void => {
+    const widthTop =
+        settings.type === 'bitmap'
+            ? Math.max(1, settings.contribPatterns[contribLevel].top.width)
+            : dxx;
+    const topPanel = bar
+        .append('rect')
+        .attr('stroke', 'none')
+        .attr('x', 0)
+        .attr('y', 0)
+        .attr('width', util.toFixed(widthTop))
+        .attr('height', util.toFixed(widthTop))
+        .attr(
+            'transform',
+            `skewY(${-ANGLE}) skewX(${util.toFixed(
+                atan(dxx / 2 / dyy),
+            )}) scale(${util.toFixed(dxx / widthTop)} ${util.toFixed(
+                (2 * dyy) / widthTop,
+            )})`,
+        );
+    paintPanel(topPanel, contribLevel, 'top', settings, date, week);
+
+    const widthLeft =
+        settings.type === 'bitmap'
+            ? Math.max(1, settings.contribPatterns[contribLevel].left.width)
+            : dxx;
+    const scaleLeft = Math.sqrt(dxx ** 2 + dyy ** 2) / widthLeft;
+    const heightLeft = calHeight / scaleLeft;
+    const leftPanel = bar
+        .append('rect')
+        .attr('stroke', 'none')
+        .attr('x', 0)
+        .attr('y', 0)
+        .attr('width', util.toFixed(widthLeft))
+        .attr('height', util.toFixed(heightLeft))
+        .attr(
+            'transform',
+            `skewY(${ANGLE}) scale(${util.toFixed(
+                dxx / widthLeft,
+            )} ${util.toFixed(scaleLeft)})`,
+        );
+    paintPanel(leftPanel, contribLevel, 'left', settings, date, week);
+    if (isAnimate && contribLevel !== 0) {
+        leftPanel
+            .append('animate')
+            .attr('attributeName', 'height')
+            .attr(
+                'values',
+                `${util.toFixed(3 / scaleLeft)};${util.toFixed(heightLeft)}`,
+            )
+            .attr('dur', '3s')
+            .attr('repeatCount', '1');
+    }
+
+    const widthRight =
+        settings.type === 'bitmap'
+            ? Math.max(1, settings.contribPatterns[contribLevel].right.width)
+            : dxx;
+    const scaleRight = Math.sqrt(dxx ** 2 + dyy ** 2) / widthRight;
+    const heightRight = calHeight / scaleRight;
+    const rightPanel = bar
+        .append('rect')
+        .attr('stroke', 'none')
+        .attr('x', 0)
+        .attr('y', 0)
+        .attr('width', util.toFixed(widthRight))
+        .attr('height', util.toFixed(heightRight))
+        .attr(
+            'transform',
+            `translate(${util.toFixed(dxx)} ${util.toFixed(
+                dyy,
+            )}) skewY(${-ANGLE}) scale(${util.toFixed(
+                dxx / widthRight,
+            )} ${util.toFixed(scaleRight)})`,
+        );
+    paintPanel(rightPanel, contribLevel, 'right', settings, date, week);
+    if (isAnimate && contribLevel !== 0) {
+        rightPanel
+            .append('animate')
+            .attr('attributeName', 'height')
+            .attr(
+                'values',
+                `${util.toFixed(3 / scaleRight)};${util.toFixed(heightRight)}`,
+            )
+            .attr('dur', '3s')
+            .attr('repeatCount', '1');
+    }
+};
+
+const drawStackedLanguageBrick = (
+    bar: d3.Selection<SVGGElement, unknown, null, unknown>,
+    calHeight: number,
+    stack: LangLayer[],
+    settings: type.BitmapPatternSettings,
+    dxx: number,
+    dyy: number,
+): void => {
+    const template = settings.contribPatterns[1] || settings.contribPatterns[0];
+    const widthTop = Math.max(1, template.top.width);
+    const topLangIndex = stack.length - 1;
+    bar.append('rect')
+        .attr('stroke', 'none')
+        .attr('x', 0)
+        .attr('y', 0)
+        .attr('width', util.toFixed(widthTop))
+        .attr('height', util.toFixed(widthTop))
+        .attr('fill', `url(#pattern_lang_${topLangIndex}_top)`)
+        .attr(
+            'transform',
+            `skewY(${-ANGLE}) skewX(${util.toFixed(
+                atan(dxx / 2 / dyy),
+            )}) scale(${util.toFixed(dxx / widthTop)} ${util.toFixed(
+                (2 * dyy) / widthTop,
+            )})`,
+        );
+
+    const widthLeft = Math.max(1, template.left.width);
+    const scaleLeft = Math.sqrt(dxx ** 2 + dyy ** 2) / widthLeft;
+    const widthRight = Math.max(1, template.right.width);
+    const scaleRight = Math.sqrt(dxx ** 2 + dyy ** 2) / widthRight;
+
+    let yFromTop = 0;
+    for (let i = stack.length - 1; i >= 0; i--) {
+        const layerHeight = calHeight * stack[i].ratio;
+        if (layerHeight < 0.05) {
+            yFromTop += layerHeight;
+            continue;
         }
+        bar.append('rect')
+            .attr('stroke', 'none')
+            .attr('x', 0)
+            .attr('y', util.toFixed(yFromTop / scaleLeft))
+            .attr('width', util.toFixed(widthLeft))
+            .attr('height', util.toFixed(layerHeight / scaleLeft))
+            .attr('fill', `url(#pattern_lang_${i}_left)`)
+            .attr(
+                'transform',
+                `skewY(${ANGLE}) scale(${util.toFixed(
+                    dxx / widthLeft,
+                )} ${util.toFixed(scaleLeft)})`,
+            );
+        bar.append('rect')
+            .attr('stroke', 'none')
+            .attr('x', 0)
+            .attr('y', util.toFixed(yFromTop / scaleRight))
+            .attr('width', util.toFixed(widthRight))
+            .attr('height', util.toFixed(layerHeight / scaleRight))
+            .attr('fill', `url(#pattern_lang_${i}_right)`)
+            .attr(
+                'transform',
+                `translate(${util.toFixed(dxx)} ${util.toFixed(
+                    dyy,
+                )}) skewY(${-ANGLE}) scale(${util.toFixed(
+                    dxx / widthRight,
+                )} ${util.toFixed(scaleRight)})`,
+            );
+        yFromTop += layerHeight;
     }
 };
 
@@ -189,6 +451,8 @@ export const create3DContrib = (
 
     const offsetX = dx * 7;
     const offsetY = height - (weekcount + 7) * dy;
+    const stack = languageStack(userInfo);
+    const useLangStack = settings.type === 'bitmap' && stack.length > 0;
 
     const group = svg.append('g');
 
@@ -230,123 +494,27 @@ export const create3DContrib = (
                 .attr('repeatCount', '1');
         }
 
-        const widthTop =
-            settings.type === 'bitmap'
-                ? Math.max(1, settings.contribPatterns[contribLevel].top.width)
-                : dxx;
-        const topPanel = bar
-            .append('rect')
-            .attr('stroke', 'none')
-            .attr('x', 0)
-            .attr('y', 0)
-            .attr('width', util.toFixed(widthTop))
-            .attr('height', util.toFixed(widthTop))
-            .attr(
-                'transform',
-                `skewY(${-ANGLE}) skewX(${util.toFixed(
-                    atan(dxx / 2 / dyy),
-                )}) scale(${util.toFixed(dxx / widthTop)} ${util.toFixed(
-                    (2 * dyy) / widthTop,
-                )})`,
+        if (settings.type === 'bitmap' && useLangStack && contribLevel !== 0) {
+            drawStackedLanguageBrick(
+                bar,
+                calHeight,
+                stack,
+                settings,
+                dxx,
+                dyy,
             );
-
-        if (settings.type === 'normal') {
-            addNormalColor(topPanel, contribLevel, 'top');
-        } else if (settings.type === 'season') {
-            addSeasonColor(topPanel, contribLevel, 'top', cal.date);
-        } else if (settings.type === 'rainbow') {
-            addRainbowColor(topPanel, contribLevel, 'top', settings, week);
-        } else if (settings.type === 'bitmap') {
-            addBitmapPattern(topPanel, contribLevel, 'top');
-        }
-
-        const widthLeft =
-            settings.type === 'bitmap'
-                ? Math.max(1, settings.contribPatterns[contribLevel].left.width)
-                : dxx;
-        const scaleLeft = Math.sqrt(dxx ** 2 + dyy ** 2) / widthLeft;
-        const heightLeft = calHeight / scaleLeft;
-        const leftPanel = bar
-            .append('rect')
-            .attr('stroke', 'none')
-            .attr('x', 0)
-            .attr('y', 0)
-            .attr('width', util.toFixed(widthLeft))
-            .attr('height', util.toFixed(heightLeft))
-            .attr(
-                'transform',
-                `skewY(${ANGLE}) scale(${util.toFixed(
-                    dxx / widthLeft,
-                )} ${util.toFixed(scaleLeft)})`,
+        } else {
+            drawSolidBrick(
+                bar,
+                calHeight,
+                contribLevel,
+                settings,
+                dxx,
+                dyy,
+                isAnimate,
+                cal.date,
+                week,
             );
-
-        if (settings.type === 'normal') {
-            addNormalColor(leftPanel, contribLevel, 'left');
-        } else if (settings.type === 'season') {
-            addSeasonColor(leftPanel, contribLevel, 'left', cal.date);
-        } else if (settings.type === 'rainbow') {
-            addRainbowColor(leftPanel, contribLevel, 'left', settings, week);
-        } else if (settings.type === 'bitmap') {
-            addBitmapPattern(leftPanel, contribLevel, 'left');
-        }
-        if (isAnimate && contribLevel !== 0) {
-            leftPanel
-                .append('animate')
-                .attr('attributeName', 'height')
-                .attr(
-                    'values',
-                    `${util.toFixed(3 / scaleLeft)};${util.toFixed(heightLeft)}`,
-                )
-                .attr('dur', '3s')
-                .attr('repeatCount', '1');
-        }
-
-        const widthRight =
-            settings.type === 'bitmap'
-                ? Math.max(
-                      1,
-                      settings.contribPatterns[contribLevel].right.width,
-                  )
-                : dxx;
-        const scaleRight = Math.sqrt(dxx ** 2 + dyy ** 2) / widthRight;
-        const heightRight = calHeight / scaleRight;
-        const rightPanel = bar
-            .append('rect')
-            .attr('stroke', 'none')
-            .attr('x', 0)
-            .attr('y', 0)
-            .attr('width', util.toFixed(widthRight))
-            .attr('height', util.toFixed(heightRight))
-            .attr(
-                'transform',
-                `translate(${util.toFixed(dxx)} ${util.toFixed(
-                    dyy,
-                )}) skewY(${-ANGLE}) scale(${util.toFixed(
-                    dxx / widthRight,
-                )} ${util.toFixed(scaleRight)})`,
-            );
-
-        if (settings.type === 'normal') {
-            addNormalColor(rightPanel, contribLevel, 'right');
-        } else if (settings.type === 'season') {
-            addSeasonColor(rightPanel, contribLevel, 'right', cal.date);
-        } else if (settings.type === 'rainbow') {
-            addRainbowColor(rightPanel, contribLevel, 'right', settings, week);
-        } else if (settings.type === 'bitmap') {
-            addBitmapPattern(rightPanel, contribLevel, 'right');
-        }
-        if (isAnimate && contribLevel !== 0) {
-            rightPanel
-                .append('animate')
-                .attr('attributeName', 'height')
-                .attr(
-                    'values',
-                    `${util.toFixed(3 / scaleRight)};${util.toFixed(
-                        heightRight,
-                    )}`,
-                )
-                .attr('dur', '3s')
-                .attr('repeatCount', '1');
         }
     });
 
@@ -369,6 +537,26 @@ const MONTH_LABELS = [
     'Dec',
 ];
 
+const addStackedLabel = (
+    group: d3.Selection<SVGGElement, unknown, null, unknown>,
+    x: number,
+    y: number,
+    label: string,
+    lineHeight: number,
+): void => {
+    const text = group
+        .append('text')
+        .attr('class', 'fill-weak')
+        .attr('text-anchor', 'middle')
+        .style('font-size', '10px');
+    [...label].forEach((ch, i) => {
+        text.append('tspan')
+            .attr('x', util.toFixed(x))
+            .attr('y', util.toFixed(y + i * lineHeight))
+            .text(ch);
+    });
+};
+
 const addCalendarLabels = (
     group: d3.Selection<SVGGElement, unknown, null, unknown>,
     userInfo: type.UserInfo,
@@ -386,7 +574,7 @@ const addCalendarLabels = (
         const baseY = offsetY + (lastWeek + dayOfWeek) * dy;
         group
             .append('text')
-            .attr('x', util.toFixed(baseX + dxx * 1.7))
+            .attr('x', util.toFixed(baseX + dxx * 3.8))
             .attr('y', util.toFixed(baseY + dyy * 0.35))
             .attr('class', 'fill-weak')
             .attr('dominant-baseline', 'middle')
@@ -410,16 +598,12 @@ const addCalendarLabels = (
         const dayOfWeek = 6;
         const baseX = offsetX + (week - dayOfWeek) * dx;
         const baseY = offsetY + (week + dayOfWeek) * dy;
-        group
-            .append('text')
-            .attr('class', 'fill-weak')
-            .style('font-size', '11px')
-            .attr(
-                'transform',
-                `translate(${util.toFixed(baseX + dxx * 0.2)} ${util.toFixed(
-                    baseY + dyy * 2.2,
-                )}) rotate(90)`,
-            )
-            .text(MONTH_LABELS[month]);
+        addStackedLabel(
+            group,
+            baseX + dxx * 0.45,
+            baseY + dyy * 2.6,
+            MONTH_LABELS[month],
+            11,
+        );
     }
 };
