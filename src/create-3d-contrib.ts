@@ -349,4 +349,77 @@ export const create3DContrib = (
                 .attr('repeatCount', '1');
         }
     });
+
+    addCalendarLabels(group, userInfo, weekcount, offsetX, offsetY, dx, dy, dxx, dyy);
+};
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_LABELS = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+];
+
+const addCalendarLabels = (
+    group: d3.Selection<SVGGElement, unknown, null, unknown>,
+    userInfo: type.UserInfo,
+    weekcount: number,
+    offsetX: number,
+    offsetY: number,
+    dx: number,
+    dy: number,
+    dxx: number,
+    dyy: number,
+): void => {
+    const lastWeek = Math.max(0, weekcount - 1);
+    DAY_LABELS.forEach((label, dayOfWeek) => {
+        const baseX = offsetX + (lastWeek - dayOfWeek) * dx;
+        const baseY = offsetY + (lastWeek + dayOfWeek) * dy;
+        group
+            .append('text')
+            .attr('x', util.toFixed(baseX + dxx * 1.7))
+            .attr('y', util.toFixed(baseY + dyy * 0.35))
+            .attr('class', 'fill-weak')
+            .attr('dominant-baseline', 'middle')
+            .style('font-size', '11px')
+            .text(label);
+    });
+
+    const days = userInfo.contributionCalendar;
+    const firstWeekday = days[0].date.getUTCDay();
+    let lastMonth = -1;
+    for (let week = 0; week < weekcount; week++) {
+        const sampleIndex = Math.min(
+            Math.max(0, week * 7 - firstWeekday),
+            days.length - 1,
+        );
+        const month = days[sampleIndex].date.getUTCMonth();
+        if (month === lastMonth) {
+            continue;
+        }
+        lastMonth = month;
+        const dayOfWeek = 6;
+        const baseX = offsetX + (week - dayOfWeek) * dx;
+        const baseY = offsetY + (week + dayOfWeek) * dy;
+        group
+            .append('text')
+            .attr('class', 'fill-weak')
+            .style('font-size', '11px')
+            .attr(
+                'transform',
+                `translate(${util.toFixed(baseX + dxx * 0.2)} ${util.toFixed(
+                    baseY + dyy * 2.2,
+                )}) rotate(90)`,
+            )
+            .text(MONTH_LABELS[month]);
+    }
 };

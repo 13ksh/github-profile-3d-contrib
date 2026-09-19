@@ -99,6 +99,99 @@ exports.aggregateUserInfo = aggregateUserInfo;
 
 /***/ }),
 
+/***/ 91022:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.withLanguageGrassColors = exports.languageGrassColors = void 0;
+const d3 = __importStar(__nccwpck_require__(85871));
+const EMPTY_COLOR = '#ebedf0';
+const languageGrassColors = (userInfo) => {
+    const langs = userInfo.contributesLanguage.filter((lang) => lang.language.toLowerCase() !== 'other' &&
+        !!lang.color &&
+        lang.color !== '#444444');
+    if (langs.length === 0) {
+        return ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
+    }
+    const top = langs.slice(0, 4);
+    while (top.length < 4) {
+        const last = top[top.length - 1];
+        top.push(last);
+    }
+    return [
+        EMPTY_COLOR,
+        top[3].color,
+        top[2].color,
+        top[1].color,
+        top[0].color,
+    ];
+};
+exports.languageGrassColors = languageGrassColors;
+const paintBitmap = (settings, colors) => {
+    settings.contribPatterns.forEach((pattern, i) => {
+        const color = colors[i];
+        pattern.top.backgroundColor = color;
+        pattern.top.foregroundColor = d3.rgb(color).darker(1.2).toString();
+        delete pattern.left.backgroundColor;
+        delete pattern.left.foregroundColor;
+        delete pattern.right.backgroundColor;
+        delete pattern.right.foregroundColor;
+    });
+    settings.radarColor = colors[4];
+};
+const withLanguageGrassColors = (settings, userInfo) => {
+    if (settings.type === 'pie_lang_only' ||
+        settings.type === 'radar_contrib_only') {
+        return settings;
+    }
+    const cloned = JSON.parse(JSON.stringify(settings));
+    const colors = (0, exports.languageGrassColors)(userInfo);
+    if (cloned.type === 'bitmap') {
+        paintBitmap(cloned, colors);
+    }
+    else if (cloned.type === 'normal') {
+        cloned.contribColors = colors;
+        cloned.radarColor = colors[4];
+    }
+    else if (cloned.type === 'season') {
+        cloned.contribColors1 = colors;
+        cloned.contribColors2 = colors;
+        cloned.contribColors3 = colors;
+        cloned.contribColors4 = colors;
+        cloned.radarColor = colors[4];
+    }
+    return cloned;
+};
+exports.withLanguageGrassColors = withLanguageGrassColors;
+//# sourceMappingURL=apply-language-colors.js.map
+
+/***/ }),
+
 /***/ 38340:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -400,8 +493,59 @@ const create3DContrib = (svg, userInfo, x, y, width, height, settings, isForcedA
                 .attr('repeatCount', '1');
         }
     });
+    addCalendarLabels(group, userInfo, weekcount, offsetX, offsetY, dx, dy, dxx, dyy);
 };
 exports.create3DContrib = create3DContrib;
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_LABELS = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+];
+const addCalendarLabels = (group, userInfo, weekcount, offsetX, offsetY, dx, dy, dxx, dyy) => {
+    const lastWeek = Math.max(0, weekcount - 1);
+    DAY_LABELS.forEach((label, dayOfWeek) => {
+        const baseX = offsetX + (lastWeek - dayOfWeek) * dx;
+        const baseY = offsetY + (lastWeek + dayOfWeek) * dy;
+        group
+            .append('text')
+            .attr('x', util.toFixed(baseX + dxx * 1.7))
+            .attr('y', util.toFixed(baseY + dyy * 0.35))
+            .attr('class', 'fill-weak')
+            .attr('dominant-baseline', 'middle')
+            .style('font-size', '11px')
+            .text(label);
+    });
+    const days = userInfo.contributionCalendar;
+    const firstWeekday = days[0].date.getUTCDay();
+    let lastMonth = -1;
+    for (let week = 0; week < weekcount; week++) {
+        const sampleIndex = Math.min(Math.max(0, week * 7 - firstWeekday), days.length - 1);
+        const month = days[sampleIndex].date.getUTCMonth();
+        if (month === lastMonth) {
+            continue;
+        }
+        lastMonth = month;
+        const dayOfWeek = 6;
+        const baseX = offsetX + (week - dayOfWeek) * dx;
+        const baseY = offsetY + (week + dayOfWeek) * dy;
+        group
+            .append('text')
+            .attr('class', 'fill-weak')
+            .style('font-size', '11px')
+            .attr('transform', `translate(${util.toFixed(baseX + dxx * 0.2)} ${util.toFixed(baseY + dyy * 2.2)}) rotate(90)`)
+            .text(MONTH_LABELS[month]);
+    }
+};
 //# sourceMappingURL=create-3d-contrib.js.map
 
 /***/ }),
@@ -553,155 +697,6 @@ const createCssColors = (settings) => {
 };
 exports.createCssColors = createCssColors;
 //# sourceMappingURL=create-css-colors.js.map
-
-/***/ }),
-
-/***/ 13993:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.createGithubCalendar = exports.CALENDAR_HEIGHT = void 0;
-const GITHUB_CONTRIB_COLORS = [
-    '#ebedf0',
-    '#9be9a8',
-    '#40c463',
-    '#30a14e',
-    '#216e39',
-];
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTH_LABELS = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-];
-const CELL = 11;
-const GAP = 3;
-const STEP = CELL + GAP;
-const DAY_LABEL_WIDTH = 34;
-const MONTH_LABEL_HEIGHT = 18;
-exports.CALENDAR_HEIGHT = 176;
-const levelColor = (settings, level) => {
-    var _a;
-    const safeLevel = Math.max(0, Math.min(4, level));
-    if (settings.type === 'bitmap') {
-        const pattern = settings.contribPatterns[safeLevel];
-        if ((_a = pattern === null || pattern === void 0 ? void 0 : pattern.top) === null || _a === void 0 ? void 0 : _a.backgroundColor) {
-            return pattern.top.backgroundColor;
-        }
-    }
-    if (settings.type === 'normal' && settings.contribColors) {
-        return settings.contribColors[safeLevel];
-    }
-    return GITHUB_CONTRIB_COLORS[safeLevel];
-};
-const createGithubCalendar = (svg, userInfo, x, y, width, settings) => {
-    const days = userInfo.contributionCalendar;
-    if (!days.length) {
-        return;
-    }
-    const group = svg.append('g').attr('transform', `translate(${x}, ${y})`);
-    const first = days[0].date;
-    const firstWeekday = first.getUTCDay();
-    const weekCount = Math.ceil((firstWeekday + days.length) / 7);
-    const graphWidth = DAY_LABEL_WIDTH + weekCount * STEP - GAP;
-    const offsetX = Math.max(0, (width - graphWidth) / 2);
-    group
-        .append('text')
-        .attr('x', offsetX)
-        .attr('y', 12)
-        .attr('class', 'fill-fg')
-        .style('font-size', '14px')
-        .style('font-weight', '600')
-        .text(`${userInfo.totalContributions} contributions in the last year`);
-    const plot = group
-        .append('g')
-        .attr('transform', `translate(${offsetX}, ${28})`);
-    DAY_LABELS.forEach((label, dayIndex) => {
-        plot.append('text')
-            .attr('x', DAY_LABEL_WIDTH - 6)
-            .attr('y', MONTH_LABEL_HEIGHT + dayIndex * STEP + CELL - 1)
-            .attr('text-anchor', 'end')
-            .attr('class', 'fill-weak')
-            .style('font-size', '10px')
-            .text(label);
-    });
-    let lastMonth = -1;
-    for (let week = 0; week < weekCount; week++) {
-        const sampleIndex = Math.max(0, week * 7 - firstWeekday);
-        const sample = days[Math.min(sampleIndex, days.length - 1)];
-        const month = sample.date.getUTCMonth();
-        if (month !== lastMonth) {
-            lastMonth = month;
-            plot.append('text')
-                .attr('x', DAY_LABEL_WIDTH + week * STEP)
-                .attr('y', 10)
-                .attr('class', 'fill-weak')
-                .style('font-size', '10px')
-                .text(MONTH_LABELS[month]);
-        }
-    }
-    days.forEach((day, index) => {
-        const pos = firstWeekday + index;
-        const week = Math.floor(pos / 7);
-        const weekday = pos % 7;
-        const cellX = DAY_LABEL_WIDTH + week * STEP;
-        const cellY = MONTH_LABEL_HEIGHT + weekday * STEP;
-        plot.append('rect')
-            .attr('x', cellX)
-            .attr('y', cellY)
-            .attr('width', CELL)
-            .attr('height', CELL)
-            .attr('rx', 2)
-            .attr('ry', 2)
-            .attr('fill', levelColor(settings, day.contributionLevel))
-            .append('title')
-            .text(`${day.contributionCount} contributions on ${day.date
-            .toISOString()
-            .slice(0, 10)}`);
-    });
-    const legendY = MONTH_LABEL_HEIGHT + 7 * STEP + 16;
-    const legend = plot
-        .append('g')
-        .attr('transform', `translate(${DAY_LABEL_WIDTH + weekCount * STEP - 5 * STEP - 70}, ${legendY})`);
-    legend
-        .append('text')
-        .attr('x', 0)
-        .attr('y', CELL - 1)
-        .attr('class', 'fill-weak')
-        .style('font-size', '10px')
-        .text('Less');
-    GITHUB_CONTRIB_COLORS.forEach((_, level) => {
-        legend
-            .append('rect')
-            .attr('x', 32 + level * STEP)
-            .attr('y', 0)
-            .attr('width', CELL)
-            .attr('height', CELL)
-            .attr('rx', 2)
-            .attr('ry', 2)
-            .attr('fill', levelColor(settings, level));
-    });
-    legend
-        .append('text')
-        .attr('x', 32 + 5 * STEP + 4)
-        .attr('y', CELL - 1)
-        .attr('class', 'fill-weak')
-        .style('font-size', '10px')
-        .text('More');
-};
-exports.createGithubCalendar = createGithubCalendar;
-//# sourceMappingURL=create-github-calendar.js.map
 
 /***/ }),
 
@@ -1062,18 +1057,18 @@ const jsdom_1 = __nccwpck_require__(81865);
 const contrib = __importStar(__nccwpck_require__(20810));
 const pie = __importStar(__nccwpck_require__(6286));
 const radar = __importStar(__nccwpck_require__(39153));
-const calendar = __importStar(__nccwpck_require__(13993));
 const colors = __importStar(__nccwpck_require__(6995));
+const langColors = __importStar(__nccwpck_require__(91022));
 const util = __importStar(__nccwpck_require__(5359));
 const width = 1280;
 const height = 850;
-const calendarHeight = calendar.CALENDAR_HEIGHT;
 const pieHeight = 200 * 1.3;
 const pieWidth = pieHeight * 2;
 const radarWidth = 400 * 1.3;
 const radarHeight = (radarWidth * 3) / 4;
 const radarX = width - radarWidth - 40;
 const createSvg = (userInfo, settings, isForcedAnimation) => {
+    var _a;
     let svgWidth = width;
     let svgHeight = height;
     if (settings.type === 'pie_lang_only') {
@@ -1084,9 +1079,6 @@ const createSvg = (userInfo, settings, isForcedAnimation) => {
         svgWidth = radarWidth;
         svgHeight = radarHeight;
     }
-    else {
-        svgHeight = height + calendarHeight;
-    }
     const fakeDom = new jsdom_1.JSDOM('<!DOCTYPE html><html><body><div class="container"></div></body></html>');
     const container = d3.select(fakeDom.window.document).select('.container');
     const svg = container
@@ -1095,11 +1087,12 @@ const createSvg = (userInfo, settings, isForcedAnimation) => {
         .attr('width', svgWidth)
         .attr('height', svgHeight)
         .attr('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+    const resolved = langColors.withLanguageGrassColors(settings, userInfo);
     svg.append('style').html([
         '* { font-family: "Ubuntu", "Helvetica", "Arial", sans-serif; }',
-        colors.createCssColors(settings),
+        colors.createCssColors(resolved),
     ].join('\n'));
-    contrib.addDefines(svg, settings);
+    contrib.addDefines(svg, resolved);
     // background
     svg.append('rect')
         .attr('x', 0)
@@ -1117,11 +1110,11 @@ const createSvg = (userInfo, settings, isForcedAnimation) => {
     }
     else {
         // 3D-Contrib Calendar
-        contrib.create3DContrib(svg, userInfo, 0, 0, width, height, settings, isForcedAnimation);
+        contrib.create3DContrib(svg, userInfo, 0, 0, width, height, resolved, isForcedAnimation);
         // radar chart
-        radar.createRadarContrib(svg, userInfo, radarX, 70, radarWidth, radarHeight, settings, isForcedAnimation);
+        radar.createRadarContrib(svg, userInfo, radarX, 70, radarWidth, radarHeight, resolved, isForcedAnimation);
         // pie chart
-        pie.createPieLanguage(svg, userInfo, 40, height - pieHeight - 70, pieWidth, pieHeight, settings, isForcedAnimation);
+        pie.createPieLanguage(svg, userInfo, 40, height - pieHeight - 70, pieWidth, pieHeight, resolved, isForcedAnimation);
         const group = svg.append('g');
         const positionXContrib = (width * 3) / 10;
         const positionYContrib = height - 20;
@@ -1134,9 +1127,7 @@ const createSvg = (userInfo, settings, isForcedAnimation) => {
             .attr('text-anchor', 'end')
             .text(util.inertThousandSeparator(userInfo.totalContributions))
             .attr('class', 'fill-strong');
-        const contribLabel = settings.l10n
-            ? settings.l10n.contrib
-            : 'contributions';
+        const contribLabel = ((_a = resolved.l10n) === null || _a === void 0 ? void 0 : _a.contrib) || 'contributions';
         group
             .append('text')
             .style('font-size', '24px')
@@ -1201,7 +1192,6 @@ const createSvg = (userInfo, settings, isForcedAnimation) => {
             .attr('text-anchor', 'end')
             .text(period)
             .attr('class', 'fill-weak');
-        calendar.createGithubCalendar(svg, userInfo, 24, height, width - 48, settings);
     }
     return container.html();
 };

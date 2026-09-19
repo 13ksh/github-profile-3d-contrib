@@ -3,14 +3,13 @@ import { JSDOM } from 'jsdom';
 import * as contrib from './create-3d-contrib';
 import * as pie from './create-pie-language';
 import * as radar from './create-radar-contrib';
-import * as calendar from './create-github-calendar';
 import * as colors from './create-css-colors';
+import * as langColors from './apply-language-colors';
 import * as util from './utils';
 import * as type from './type';
 
 const width = 1280;
 const height = 850;
-const calendarHeight = calendar.CALENDAR_HEIGHT;
 
 const pieHeight = 200 * 1.3;
 const pieWidth = pieHeight * 2;
@@ -32,8 +31,6 @@ export const createSvg = (
     } else if (settings.type === 'radar_contrib_only') {
         svgWidth = radarWidth;
         svgHeight = radarHeight;
-    } else {
-        svgHeight = height + calendarHeight;
     }
 
     const fakeDom = new JSDOM(
@@ -47,14 +44,16 @@ export const createSvg = (
         .attr('height', svgHeight)
         .attr('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
 
+    const resolved = langColors.withLanguageGrassColors(settings, userInfo);
+
     svg.append('style').html(
         [
             '* { font-family: "Ubuntu", "Helvetica", "Arial", sans-serif; }',
-            colors.createCssColors(settings),
+            colors.createCssColors(resolved),
         ].join('\n'),
     );
 
-    contrib.addDefines(svg, settings);
+    contrib.addDefines(svg, resolved);
 
     // background
     svg.append('rect')
@@ -97,7 +96,7 @@ export const createSvg = (
             0,
             width,
             height,
-            settings,
+            resolved as type.FullSettings,
             isForcedAnimation,
         );
 
@@ -109,7 +108,7 @@ export const createSvg = (
             70,
             radarWidth,
             radarHeight,
-            settings,
+            resolved as type.FullSettings,
             isForcedAnimation,
         );
 
@@ -121,7 +120,7 @@ export const createSvg = (
             height - pieHeight - 70,
             pieWidth,
             pieHeight,
-            settings,
+            resolved,
             isForcedAnimation,
         );
 
@@ -140,9 +139,8 @@ export const createSvg = (
             .text(util.inertThousandSeparator(userInfo.totalContributions))
             .attr('class', 'fill-strong');
 
-        const contribLabel = settings.l10n
-            ? settings.l10n.contrib
-            : 'contributions';
+        const contribLabel =
+            (resolved as type.FullSettings).l10n?.contrib || 'contributions';
         group
             .append('text')
             .style('font-size', '24px')
@@ -236,15 +234,6 @@ export const createSvg = (
             .attr('text-anchor', 'end')
             .text(period)
             .attr('class', 'fill-weak');
-
-        calendar.createGithubCalendar(
-            svg,
-            userInfo,
-            24,
-            height,
-            width - 48,
-            settings,
-        );
     }
     return container.html();
 };

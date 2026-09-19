@@ -3,9 +3,9 @@
 This is a fork of [yoshi389111/github-profile-3d-contrib](https://github.com/yoshi389111/github-profile-3d-contrib) (MIT). Original license is kept in `LICENSE`.
 
 Changes in this fork:
-- GitHub contribution-graph colors on 3D blocks
+- 3D block colors come from the languages you commit in
 - Languages under 0.1% are grouped as `other`
-- A real GitHub-style 2D contribution calendar is appended
+- Day/month labels are drawn in the 3D calendar (days on the right, months vertical at the bottom)
 
 ![svg](https://raw.githubusercontent.com/yoshi389111/github-profile-3d-contrib/main/docs/demo/profile-gitblock.svg)
 
