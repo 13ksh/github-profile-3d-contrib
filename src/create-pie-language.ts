@@ -3,13 +3,47 @@ import * as type from './type';
 
 const OTHER_NAME = 'other';
 const OTHER_COLOR = '#444444';
+const OTHER_RATIO = 0.001;
+
+const groupLanguages = (userInfo: type.UserInfo): type.LangInfo[] => {
+    const source = userInfo.contributesLanguage;
+    const listedSum = source.reduce((sum, lang) => sum + lang.contributions, 0);
+    const total = userInfo.totalCommitContributions || listedSum;
+    if (total <= 0) {
+        return [];
+    }
+
+    const languages: type.LangInfo[] = [];
+    let otherContributions = 0;
+    for (const lang of source) {
+        if (lang.contributions / total < OTHER_RATIO) {
+            otherContributions += lang.contributions;
+        } else {
+            languages.push({ ...lang });
+        }
+    }
+
+    const accounted = languages.reduce((sum, lang) => sum + lang.contributions, 0) + otherContributions;
+    const leftover = userInfo.totalCommitContributions - accounted;
+    if (leftover > 0) {
+        otherContributions += leftover;
+    }
+    if (otherContributions > 0) {
+        languages.push({
+            language: OTHER_NAME,
+            color: OTHER_COLOR,
+            contributions: otherContributions,
+        });
+    }
+    return languages;
+};
 
 export const createPieLanguage = (
     svg: d3.Selection<SVGSVGElement, unknown, null, unknown>,
     userInfo: type.UserInfo,
     x: number,
     y: number,
-    width: number,
+    _width: number,
     height: number,
     settings: type.PieLangSettings,
     isForcedAnimation: boolean,
@@ -18,17 +52,9 @@ export const createPieLanguage = (
         return;
     }
 
-    const languages = userInfo.contributesLanguage.slice(0, 5);
-    const sumContrib = languages
-        .map((lang) => lang.contributions)
-        .reduce((a, b) => a + b, 0);
-    const otherContributions = userInfo.totalCommitContributions - sumContrib;
-    if (0 < otherContributions) {
-        languages.push({
-            language: OTHER_NAME,
-            color: OTHER_COLOR,
-            contributions: otherContributions,
-        });
+    const languages = groupLanguages(userInfo);
+    if (languages.length === 0) {
+        return;
     }
 
     const isAnimate = settings.growingAnimation || isForcedAnimation;
@@ -42,7 +68,7 @@ export const createPieLanguage = (
     const radius = height / 2;
     const margin = radius / 10;
 
-    const row = 8;
+    const row = Math.max(8, languages.length);
     const offset = (row - languages.length) / 2 + 0.5;
     const fontSize = height / row / 1.5;
 

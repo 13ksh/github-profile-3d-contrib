@@ -4,12 +4,12 @@
   "foregroundColor": "#00000f",
   "strongColor": "#111133",
   "weakColor": "gray",
-  "radarColor": "#47a042",
+  "radarColor": "#40c463",
   "contribPatterns": [
     {
       "top": {
-        "backgroundColor": "#f8f8f8",
-        "foregroundColor": "#aaaaaa",
+        "backgroundColor": "#ebedf0",
+        "foregroundColor": "#c4c8cc",
         "width": 32,
         "bitmap": [
           "0x00000000",
@@ -75,8 +75,8 @@
     },
     {
       "top": {
-        "backgroundColor": "hsl(125, 52%, 50%)",
-        "foregroundColor": "hsl(125, 52%, 10%)",
+        "backgroundColor": "#9be9a8",
+        "foregroundColor": "#40c463",
         "width": 32,
         "bitmap": [
           "0x00000000",
@@ -142,8 +142,8 @@
     },
     {
       "top": {
-        "backgroundColor": "hsl(242, 100%, 65%)",
-        "foregroundColor": "hsl(242, 100%, 16%)",
+        "backgroundColor": "#40c463",
+        "foregroundColor": "#30a14e",
         "width": 32,
         "bitmap": [
           "0x00000000",
@@ -209,8 +209,8 @@
     },
     {
       "top": {
-        "backgroundColor": "hsl(48, 100%, 50%)",
-        "foregroundColor": "hsl(48, 100%, 15%)",
+        "backgroundColor": "#30a14e",
+        "foregroundColor": "#216e39",
         "width": 32,
         "bitmap": [
           "0x00000000",
@@ -276,8 +276,8 @@
     },
     {
       "top": {
-        "backgroundColor": "hsl(350, 100%, 50%)",
-        "foregroundColor": "hsl(350, 100%, 15%)",
+        "backgroundColor": "#216e39",
+        "foregroundColor": "#0e4429",
         "width": 32,
         "bitmap": [
           "0x00000000",
