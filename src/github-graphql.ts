@@ -10,6 +10,14 @@ export type CommitContributionDay = {
     commitCount: number;
 };
 
+export type RepoLanguageEdge = {
+    size: number;
+    node: {
+        name: string;
+        color: string | null;
+    };
+};
+
 export type CommitContributionsByRepository = Array<{
     contributions: {
         totalCount: number;
@@ -22,6 +30,10 @@ export type CommitContributionsByRepository = Array<{
             /** "#RRGGBB" */
             color: string | null;
         } | null;
+        languages?: {
+            totalSize: number;
+            edges: RepoLanguageEdge[];
+        };
     };
 }>;
 
@@ -121,6 +133,16 @@ export const fetchFirst = async (
                                     name
                                     color
                                 }
+                                languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                                    totalSize
+                                    edges {
+                                        size
+                                        node {
+                                            name
+                                            color
+                                        }
+                                    }
+                                }
                             }
                             contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {
                                 totalCount
@@ -176,6 +198,9 @@ const mergeCommitRepos = (
             base.push(repo);
             index.set(key, repo);
             continue;
+        }
+        if (!target.repository.languages && repo.repository.languages) {
+            target.repository.languages = repo.repository.languages;
         }
         const counts = new Map<string, number>();
         for (const node of target.contributions.nodes || []) {
@@ -244,6 +269,16 @@ const fetchCommitPage = async (
                                 primaryLanguage {
                                     name
                                     color
+                                }
+                                languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                                    totalSize
+                                    edges {
+                                        size
+                                        node {
+                                            name
+                                            color
+                                        }
+                                    }
                                 }
                             }
                             contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {

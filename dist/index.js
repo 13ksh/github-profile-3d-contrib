@@ -33,6 +33,46 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.aggregateUserInfo = void 0;
 const langColors = __importStar(__nccwpck_require__(91022));
 const OTHER_COLOR = '#444444';
+const languageShares = (repo) => {
+    var _a, _b, _c;
+    const total = ((_a = repo.languages) === null || _a === void 0 ? void 0 : _a.totalSize) || 0;
+    const edges = ((_b = repo.languages) === null || _b === void 0 ? void 0 : _b.edges) || [];
+    if (total > 0 && edges.length > 0) {
+        return edges
+            .filter((edge) => edge.size > 0 && edge.node.name)
+            .map((edge) => ({
+            language: edge.node.name,
+            color: edge.node.color || OTHER_COLOR,
+            ratio: edge.size / total,
+        }));
+    }
+    if ((_c = repo.primaryLanguage) === null || _c === void 0 ? void 0 : _c.name) {
+        return [
+            {
+                language: repo.primaryLanguage.name,
+                color: repo.primaryLanguage.color || OTHER_COLOR,
+                ratio: 1,
+            },
+        ];
+    }
+    return [];
+};
+const addLangAmount = (target, language, color, amount) => {
+    if (amount <= 0 || language.toLowerCase() === 'other') {
+        return;
+    }
+    const info = target[language];
+    if (info) {
+        info.contributions += amount;
+    }
+    else {
+        target[language] = {
+            language,
+            color,
+            contributions: amount,
+        };
+    }
+};
 const toUtcDateKey = (value) => {
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
         return value.slice(0, 10);
@@ -81,22 +121,10 @@ const aggregateUserInfo = (response) => {
     const contributesLanguage = {};
     const languagesByDay = {};
     user.contributionsCollection.commitContributionsByRepository.forEach((repo) => {
-        var _a, _b;
-        const language = ((_a = repo.repository.primaryLanguage) === null || _a === void 0 ? void 0 : _a.name) || 'other';
-        const color = ((_b = repo.repository.primaryLanguage) === null || _b === void 0 ? void 0 : _b.color) || OTHER_COLOR;
+        const shares = languageShares(repo.repository);
         const contributions = repo.contributions.totalCount;
-        if (language !== 'other') {
-            const info = contributesLanguage[language];
-            if (info) {
-                info.contributions += contributions;
-            }
-            else {
-                contributesLanguage[language] = {
-                    language: language,
-                    color: color,
-                    contributions: contributions,
-                };
-            }
+        for (const share of shares) {
+            addLangAmount(contributesLanguage, share.language, share.color, contributions * share.ratio);
         }
         const dayCounts = {};
         for (const node of repo.contributions.nodes || []) {
@@ -107,16 +135,11 @@ const aggregateUserInfo = (response) => {
             if (!languagesByDay[dayKey]) {
                 languagesByDay[dayKey] = {};
             }
-            const dayLang = languagesByDay[dayKey][language];
-            if (dayLang) {
-                dayLang.contributions += commitCount;
+            if (shares.length === 0) {
+                continue;
             }
-            else {
-                languagesByDay[dayKey][language] = {
-                    language: language,
-                    color: color,
-                    contributions: commitCount,
-                };
+            for (const share of shares) {
+                addLangAmount(languagesByDay[dayKey], share.language, share.color, commitCount * share.ratio);
             }
         }
     });
@@ -1433,6 +1456,16 @@ const fetchFirst = async (token, userName, year = null) => {
                                     name
                                     color
                                 }
+                                languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                                    totalSize
+                                    edges {
+                                        size
+                                        node {
+                                            name
+                                            color
+                                        }
+                                    }
+                                }
                             }
                             contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {
                                 totalCount
@@ -1485,6 +1518,9 @@ const mergeCommitRepos = (base, extra) => {
             index.set(key, repo);
             continue;
         }
+        if (!target.repository.languages && repo.repository.languages) {
+            target.repository.languages = repo.repository.languages;
+        }
         const counts = new Map();
         for (const node of target.contributions.nodes || []) {
             counts.set(toDateKey(node.occurredAt), node.commitCount);
@@ -1528,6 +1564,16 @@ const fetchCommitPage = async (token, userName, from, to) => {
                                 primaryLanguage {
                                     name
                                     color
+                                }
+                                languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                                    totalSize
+                                    edges {
+                                        size
+                                        node {
+                                            name
+                                            color
+                                        }
+                                    }
                                 }
                             }
                             contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {

@@ -4,6 +4,59 @@ import * as type from './type';
 
 const OTHER_COLOR = '#444444';
 
+type LangShare = {
+    language: string;
+    color: string;
+    ratio: number;
+};
+
+const languageShares = (
+    repo: client.CommitContributionsByRepository[number]['repository'],
+): LangShare[] => {
+    const total = repo.languages?.totalSize || 0;
+    const edges = repo.languages?.edges || [];
+    if (total > 0 && edges.length > 0) {
+        return edges
+            .filter((edge) => edge.size > 0 && edge.node.name)
+            .map((edge) => ({
+                language: edge.node.name,
+                color: edge.node.color || OTHER_COLOR,
+                ratio: edge.size / total,
+            }));
+    }
+    if (repo.primaryLanguage?.name) {
+        return [
+            {
+                language: repo.primaryLanguage.name,
+                color: repo.primaryLanguage.color || OTHER_COLOR,
+                ratio: 1,
+            },
+        ];
+    }
+    return [];
+};
+
+const addLangAmount = (
+    target: { [language: string]: type.LangInfo },
+    language: string,
+    color: string,
+    amount: number,
+): void => {
+    if (amount <= 0 || language.toLowerCase() === 'other') {
+        return;
+    }
+    const info = target[language];
+    if (info) {
+        info.contributions += amount;
+    } else {
+        target[language] = {
+            language,
+            color,
+            contributions: amount,
+        };
+    }
+};
+
 const toUtcDateKey = (value: string | Date): string => {
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
         return value.slice(0, 10);
@@ -58,21 +111,15 @@ export const aggregateUserInfo = (
     } = {};
     user.contributionsCollection.commitContributionsByRepository.forEach(
         (repo) => {
-            const language = repo.repository.primaryLanguage?.name || 'other';
-            const color = repo.repository.primaryLanguage?.color || OTHER_COLOR;
+            const shares = languageShares(repo.repository);
             const contributions = repo.contributions.totalCount;
-
-            if (language !== 'other') {
-                const info = contributesLanguage[language];
-                if (info) {
-                    info.contributions += contributions;
-                } else {
-                    contributesLanguage[language] = {
-                        language: language,
-                        color: color,
-                        contributions: contributions,
-                    };
-                }
+            for (const share of shares) {
+                addLangAmount(
+                    contributesLanguage,
+                    share.language,
+                    share.color,
+                    contributions * share.ratio,
+                );
             }
 
             const dayCounts: { [date: string]: number } = {};
@@ -87,15 +134,16 @@ export const aggregateUserInfo = (
                 if (!languagesByDay[dayKey]) {
                     languagesByDay[dayKey] = {};
                 }
-                const dayLang = languagesByDay[dayKey][language];
-                if (dayLang) {
-                    dayLang.contributions += commitCount;
-                } else {
-                    languagesByDay[dayKey][language] = {
-                        language: language,
-                        color: color,
-                        contributions: commitCount,
-                    };
+                if (shares.length === 0) {
+                    continue;
+                }
+                for (const share of shares) {
+                    addLangAmount(
+                        languagesByDay[dayKey],
+                        share.language,
+                        share.color,
+                        commitCount * share.ratio,
+                    );
                 }
             }
         },
