@@ -635,8 +635,8 @@ const addCalendarLabels = (
         const baseY = offsetY + (lastWeek + dayOfWeek) * dy;
         group
             .append('text')
-            .attr('x', util.toFixed(baseX + dxx * 3.8))
-            .attr('y', util.toFixed(baseY + dyy * 0.35))
+            .attr('x', util.toFixed(baseX + dxx * 3.1))
+            .attr('y', util.toFixed(baseY + dyy * 1.15))
             .attr('class', 'fill-weak')
             .attr('dominant-baseline', 'middle')
             .style('font-size', '11px')
