@@ -1,19 +1,45 @@
 import * as type from './type';
 
 const OTHER_RATIO = 0.001;
+const OTHER_COLOR = '#444444';
 
-export type LangLayer = {
-    language: string;
-    color: string;
-    ratio: number;
+export type LangLayer = type.LangLayer;
+
+export const languagePatternId = (language: string, color: string): string => {
+    const name = language.replace(/[^A-Za-z0-9]+/g, '_') || 'lang';
+    const hex = color.replace(/[^A-Za-z0-9]/g, '') || '000000';
+    return `lang_${name}_${hex}`;
 };
 
-export const languageStack = (userInfo: type.UserInfo): LangLayer[] => {
+export const stackFromLangs = (
+    langs: Array<Pick<type.LangInfo, 'language' | 'color' | 'contributions'>>,
+): type.LangLayer[] => {
+    const source = langs.filter(
+        (lang) =>
+            lang.language.toLowerCase() !== 'other' &&
+            !!lang.color &&
+            lang.color !== OTHER_COLOR &&
+            lang.contributions > 0,
+    );
+    const total = source.reduce((sum, lang) => sum + lang.contributions, 0);
+    if (total <= 0) {
+        return [];
+    }
+    return [...source]
+        .sort((a, b) => b.contributions - a.contributions)
+        .map((lang) => ({
+            language: lang.language,
+            color: lang.color,
+            ratio: lang.contributions / total,
+        }));
+};
+
+export const languageStack = (userInfo: type.UserInfo): type.LangLayer[] => {
     const source = userInfo.contributesLanguage.filter(
         (lang) =>
             lang.language.toLowerCase() !== 'other' &&
             !!lang.color &&
-            lang.color !== '#444444',
+            lang.color !== OTHER_COLOR,
     );
     const listedSum = source.reduce((sum, lang) => sum + lang.contributions, 0);
     const total = listedSum || userInfo.totalCommitContributions;
@@ -21,15 +47,24 @@ export const languageStack = (userInfo: type.UserInfo): LangLayer[] => {
         return [];
     }
     const kept = source.filter((lang) => lang.contributions / total >= OTHER_RATIO);
-    const keptSum = kept.reduce((sum, lang) => sum + lang.contributions, 0);
-    if (keptSum <= 0) {
-        return [];
+    return stackFromLangs(kept);
+};
+
+export const uniqueLanguageColors = (
+    userInfo: type.UserInfo,
+): Array<{ language: string; color: string }> => {
+    const map = new Map<string, string>();
+    for (const lang of userInfo.contributesLanguage) {
+        if (lang.color && lang.color !== OTHER_COLOR) {
+            map.set(lang.language, lang.color);
+        }
     }
-    return kept.map((lang) => ({
-        language: lang.language,
-        color: lang.color,
-        ratio: lang.contributions / keptSum,
-    }));
+    for (const day of userInfo.contributionCalendar) {
+        for (const layer of day.languages) {
+            map.set(layer.language, layer.color);
+        }
+    }
+    return [...map.entries()].map(([language, color]) => ({ language, color }));
 };
 
 export const withLanguageGrassColors = (

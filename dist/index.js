@@ -2,13 +2,47 @@
 /******/ 	var __webpack_modules__ = ({
 
 /***/ 75178:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.aggregateUserInfo = void 0;
+const langColors = __importStar(__nccwpck_require__(91022));
 const OTHER_COLOR = '#444444';
+const toUtcDateKey = (value) => {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+        return value.slice(0, 10);
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 const toNumberContributionLevel = (level) => {
     switch (level) {
         case 'NONE':
@@ -44,14 +78,8 @@ const aggregateUserInfo = (response) => {
         }
     }
     const user = response.data.user;
-    const calendar = user.contributionsCollection.contributionCalendar.weeks
-        .flatMap((week) => week.contributionDays)
-        .map((week) => ({
-        contributionCount: week.contributionCount,
-        contributionLevel: toNumberContributionLevel(week.contributionLevel),
-        date: new Date(week.date),
-    }));
     const contributesLanguage = {};
+    const languagesByDay = {};
     user.contributionsCollection.commitContributionsByRepository
         .filter((repo) => repo.repository.primaryLanguage)
         .forEach((repo) => {
@@ -70,6 +98,35 @@ const aggregateUserInfo = (response) => {
                 contributions: contributions,
             };
         }
+        for (const node of repo.contributions.nodes || []) {
+            const dayKey = toUtcDateKey(node.occurredAt);
+            if (!languagesByDay[dayKey]) {
+                languagesByDay[dayKey] = {};
+            }
+            const dayLang = languagesByDay[dayKey][language];
+            if (dayLang) {
+                dayLang.contributions += node.commitCount;
+            }
+            else {
+                languagesByDay[dayKey][language] = {
+                    language: language,
+                    color: color,
+                    contributions: node.commitCount,
+                };
+            }
+        }
+    });
+    const calendar = user.contributionsCollection.contributionCalendar.weeks
+        .flatMap((week) => week.contributionDays)
+        .map((week) => {
+        const date = new Date(week.date);
+        const dayLangs = languagesByDay[toUtcDateKey(date)] || {};
+        return {
+            contributionCount: week.contributionCount,
+            contributionLevel: toNumberContributionLevel(week.contributionLevel),
+            date,
+            languages: langColors.stackFromLangs(Object.values(dayLangs)),
+        };
     });
     const languages = Object.values(contributesLanguage).sort((obj1, obj2) => -compare(obj1.contributions, obj2.contributions));
     const totalForkCount = user.repositories.nodes
@@ -105,29 +162,61 @@ exports.aggregateUserInfo = aggregateUserInfo;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.withLanguageGrassColors = exports.languageStack = void 0;
+exports.withLanguageGrassColors = exports.uniqueLanguageColors = exports.languageStack = exports.stackFromLangs = exports.languagePatternId = void 0;
 const OTHER_RATIO = 0.001;
+const OTHER_COLOR = '#444444';
+const languagePatternId = (language, color) => {
+    const name = language.replace(/[^A-Za-z0-9]+/g, '_') || 'lang';
+    const hex = color.replace(/[^A-Za-z0-9]/g, '') || '000000';
+    return `lang_${name}_${hex}`;
+};
+exports.languagePatternId = languagePatternId;
+const stackFromLangs = (langs) => {
+    const source = langs.filter((lang) => lang.language.toLowerCase() !== 'other' &&
+        !!lang.color &&
+        lang.color !== OTHER_COLOR &&
+        lang.contributions > 0);
+    const total = source.reduce((sum, lang) => sum + lang.contributions, 0);
+    if (total <= 0) {
+        return [];
+    }
+    return [...source]
+        .sort((a, b) => b.contributions - a.contributions)
+        .map((lang) => ({
+        language: lang.language,
+        color: lang.color,
+        ratio: lang.contributions / total,
+    }));
+};
+exports.stackFromLangs = stackFromLangs;
 const languageStack = (userInfo) => {
     const source = userInfo.contributesLanguage.filter((lang) => lang.language.toLowerCase() !== 'other' &&
         !!lang.color &&
-        lang.color !== '#444444');
+        lang.color !== OTHER_COLOR);
     const listedSum = source.reduce((sum, lang) => sum + lang.contributions, 0);
     const total = listedSum || userInfo.totalCommitContributions;
     if (total <= 0) {
         return [];
     }
     const kept = source.filter((lang) => lang.contributions / total >= OTHER_RATIO);
-    const keptSum = kept.reduce((sum, lang) => sum + lang.contributions, 0);
-    if (keptSum <= 0) {
-        return [];
-    }
-    return kept.map((lang) => ({
-        language: lang.language,
-        color: lang.color,
-        ratio: lang.contributions / keptSum,
-    }));
+    return (0, exports.stackFromLangs)(kept);
 };
 exports.languageStack = languageStack;
+const uniqueLanguageColors = (userInfo) => {
+    const map = new Map();
+    for (const lang of userInfo.contributesLanguage) {
+        if (lang.color && lang.color !== OTHER_COLOR) {
+            map.set(lang.language, lang.color);
+        }
+    }
+    for (const day of userInfo.contributionCalendar) {
+        for (const layer of day.languages) {
+            map.set(layer.language, layer.color);
+        }
+    }
+    return [...map.entries()].map(([language, color]) => ({ language, color }));
+};
+exports.uniqueLanguageColors = uniqueLanguageColors;
 const withLanguageGrassColors = (settings, userInfo) => {
     if (settings.type === 'pie_lang_only' ||
         settings.type === 'radar_contrib_only') {
@@ -358,12 +447,13 @@ const addDefines = (svg, settings, userInfo) => {
     if (!userInfo) {
         return;
     }
-    const stack = (0, apply_language_colors_1.languageStack)(userInfo);
+    const langs = (0, apply_language_colors_1.uniqueLanguageColors)(userInfo);
     const template = settings.contribPatterns[1] || settings.contribPatterns[0];
-    stack.forEach((layer, i) => {
-        addLanguageBitmapPattern(defs, template.top, `pattern_lang_${i}_top`, layer.color, 'top');
-        addLanguageBitmapPattern(defs, template.left, `pattern_lang_${i}_left`, layer.color, 'left');
-        addLanguageBitmapPattern(defs, template.right, `pattern_lang_${i}_right`, layer.color, 'right');
+    langs.forEach((layer) => {
+        const id = (0, apply_language_colors_1.languagePatternId)(layer.language, layer.color);
+        addLanguageBitmapPattern(defs, template.top, `pattern_${id}_top`, layer.color, 'top');
+        addLanguageBitmapPattern(defs, template.left, `pattern_${id}_left`, layer.color, 'left');
+        addLanguageBitmapPattern(defs, template.right, `pattern_${id}_right`, layer.color, 'right');
     });
 };
 exports.addDefines = addDefines;
@@ -414,6 +504,7 @@ const drawSolidBrick = (bar, calHeight, contribLevel, settings, dxx, dyy, isAnim
             .attr('attributeName', 'height')
             .attr('values', `${util.toFixed(3 / scaleLeft)};${util.toFixed(heightLeft)}`)
             .attr('dur', '3s')
+            .attr('fill', 'freeze')
             .attr('repeatCount', '1');
     }
     const widthRight = settings.type === 'bitmap'
@@ -436,48 +527,75 @@ const drawSolidBrick = (bar, calHeight, contribLevel, settings, dxx, dyy, isAnim
             .attr('attributeName', 'height')
             .attr('values', `${util.toFixed(3 / scaleRight)};${util.toFixed(heightRight)}`)
             .attr('dur', '3s')
+            .attr('fill', 'freeze')
             .attr('repeatCount', '1');
     }
 };
-const drawStackedLanguageBrick = (bar, calHeight, stack, settings, dxx, dyy) => {
+const animateFloorGrow = (panel, startY, endY, startHeight, endHeight) => {
+    panel
+        .append('animate')
+        .attr('attributeName', 'y')
+        .attr('values', `${util.toFixed(startY)};${util.toFixed(endY)}`)
+        .attr('dur', '3s')
+        .attr('fill', 'freeze')
+        .attr('repeatCount', '1');
+    panel
+        .append('animate')
+        .attr('attributeName', 'height')
+        .attr('values', `${util.toFixed(startHeight)};${util.toFixed(endHeight)}`)
+        .attr('dur', '3s')
+        .attr('fill', 'freeze')
+        .attr('repeatCount', '1');
+};
+const drawStackedLanguageBrick = (bar, calHeight, stack, settings, dxx, dyy, isAnimate) => {
     const template = settings.contribPatterns[1] || settings.contribPatterns[0];
     const widthTop = Math.max(1, template.top.width);
-    const topLangIndex = stack.length - 1;
+    const topLayer = stack[stack.length - 1];
+    const topId = (0, apply_language_colors_1.languagePatternId)(topLayer.language, topLayer.color);
     bar.append('rect')
         .attr('stroke', 'none')
         .attr('x', 0)
         .attr('y', 0)
         .attr('width', util.toFixed(widthTop))
         .attr('height', util.toFixed(widthTop))
-        .attr('fill', `url(#pattern_lang_${topLangIndex}_top)`)
+        .attr('fill', `url(#pattern_${topId}_top)`)
         .attr('transform', `skewY(${-ANGLE}) skewX(${util.toFixed(atan(dxx / 2 / dyy))}) scale(${util.toFixed(dxx / widthTop)} ${util.toFixed((2 * dyy) / widthTop)})`);
     const widthLeft = Math.max(1, template.left.width);
     const scaleLeft = Math.sqrt(dxx ** 2 + dyy ** 2) / widthLeft;
     const widthRight = Math.max(1, template.right.width);
     const scaleRight = Math.sqrt(dxx ** 2 + dyy ** 2) / widthRight;
+    const startRatio = Math.min(1, 3 / calHeight);
     let yFromTop = 0;
     for (let i = stack.length - 1; i >= 0; i--) {
-        const layerHeight = calHeight * stack[i].ratio;
-        if (layerHeight < 0.05) {
-            yFromTop += layerHeight;
-            continue;
-        }
-        bar.append('rect')
+        const layer = stack[i];
+        const layerHeight = calHeight * layer.ratio;
+        const patternId = (0, apply_language_colors_1.languagePatternId)(layer.language, layer.color);
+        const leftY = yFromTop / scaleLeft;
+        const leftH = layerHeight / scaleLeft;
+        const rightY = yFromTop / scaleRight;
+        const rightH = layerHeight / scaleRight;
+        const leftPanel = bar
+            .append('rect')
             .attr('stroke', 'none')
             .attr('x', 0)
-            .attr('y', util.toFixed(yFromTop / scaleLeft))
+            .attr('y', util.toFixed(leftY))
             .attr('width', util.toFixed(widthLeft))
-            .attr('height', util.toFixed(layerHeight / scaleLeft))
-            .attr('fill', `url(#pattern_lang_${i}_left)`)
+            .attr('height', util.toFixed(leftH))
+            .attr('fill', `url(#pattern_${patternId}_left)`)
             .attr('transform', `skewY(${ANGLE}) scale(${util.toFixed(dxx / widthLeft)} ${util.toFixed(scaleLeft)})`);
-        bar.append('rect')
+        const rightPanel = bar
+            .append('rect')
             .attr('stroke', 'none')
             .attr('x', 0)
-            .attr('y', util.toFixed(yFromTop / scaleRight))
+            .attr('y', util.toFixed(rightY))
             .attr('width', util.toFixed(widthRight))
-            .attr('height', util.toFixed(layerHeight / scaleRight))
-            .attr('fill', `url(#pattern_lang_${i}_right)`)
+            .attr('height', util.toFixed(rightH))
+            .attr('fill', `url(#pattern_${patternId}_right)`)
             .attr('transform', `translate(${util.toFixed(dxx)} ${util.toFixed(dyy)}) skewY(${-ANGLE}) scale(${util.toFixed(dxx / widthRight)} ${util.toFixed(scaleRight)})`);
+        if (isAnimate) {
+            animateFloorGrow(leftPanel, leftY * startRatio, leftY, leftH * startRatio, leftH);
+            animateFloorGrow(rightPanel, rightY * startRatio, rightY, rightH * startRatio, rightH);
+        }
         yFromTop += layerHeight;
     }
 };
@@ -494,8 +612,6 @@ const create3DContrib = (svg, userInfo, x, y, width, height, settings, isForcedA
     const dyy = dy * 0.9;
     const offsetX = dx * 7;
     const offsetY = height - (weekcount + 7) * dy;
-    const stack = (0, apply_language_colors_1.languageStack)(userInfo);
-    const useLangStack = settings.type === 'bitmap' && stack.length > 0;
     const group = svg.append('g');
     userInfo.contributionCalendar.forEach((cal) => {
         const week = Math.floor((toEpochDays(cal.date) - sundayOfFirstWeek) / 7);
@@ -505,6 +621,7 @@ const create3DContrib = (svg, userInfo, x, y, width, height, settings, isForcedA
         // ref. https://github.com/yoshi389111/github-profile-3d-contrib/issues/27
         const calHeight = Math.log10(cal.contributionCount / 20 + 1) * 144 + 3;
         const contribLevel = cal.contributionLevel;
+        const dayStack = cal.languages;
         const isAnimate = settings.growingAnimation || isForcedAnimation;
         const bar = group
             .append('g')
@@ -515,10 +632,11 @@ const create3DContrib = (svg, userInfo, x, y, width, height, settings, isForcedA
                 .attr('type', 'translate')
                 .attr('values', `${util.toFixed(baseX)} ${util.toFixed(baseY - 3)};${util.toFixed(baseX)} ${util.toFixed(baseY - calHeight)}`)
                 .attr('dur', '3s')
+                .attr('fill', 'freeze')
                 .attr('repeatCount', '1');
         }
-        if (settings.type === 'bitmap' && useLangStack && contribLevel !== 0) {
-            drawStackedLanguageBrick(bar, calHeight, stack, settings, dxx, dyy);
+        if (settings.type === 'bitmap' && dayStack.length > 0 && contribLevel !== 0) {
+            drawStackedLanguageBrick(bar, calHeight, dayStack, settings, dxx, dyy, isAnimate);
         }
         else {
             drawSolidBrick(bar, calHeight, contribLevel, settings, dxx, dyy, isAnimate, cal.date, week);
@@ -1300,8 +1418,12 @@ const fetchFirst = async (token, userName, year = null) => {
                                     color
                                 }
                             }
-                            contributions {
+                            contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {
                                 totalCount
+                                nodes {
+                                    occurredAt
+                                    commitCount
+                                }
                             }
                         }
                         totalCommitContributions

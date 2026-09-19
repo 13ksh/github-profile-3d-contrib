@@ -8,6 +8,10 @@ const maxReposOneQuery = 100;
 export type CommitContributionsByRepository = Array<{
     contributions: {
         totalCount: number;
+        nodes?: Array<{
+            occurredAt: string;
+            commitCount: number;
+        }>;
     };
     repository: {
         primaryLanguage: {
@@ -114,8 +118,12 @@ export const fetchFirst = async (
                                     color
                                 }
                             }
-                            contributions {
+                            contributions(first: 100, orderBy: {field: OCCURRED_AT, direction: DESC}) {
                                 totalCount
+                                nodes {
+                                    occurredAt
+                                    commitCount
+                                }
                             }
                         }
                         totalCommitContributions

@@ -1,7 +1,14 @@
+export interface LangLayer {
+    language: string;
+    color: string;
+    ratio: number;
+}
+
 export interface CalendarInfo {
     contributionCount: number;
     contributionLevel: number;
     date: Date;
+    languages: LangLayer[];
 }
 
 export interface LangInfo {

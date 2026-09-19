@@ -1,7 +1,19 @@
 import * as client from './github-graphql';
+import * as langColors from './apply-language-colors';
 import * as type from './type';
 
 const OTHER_COLOR = '#444444';
+
+const toUtcDateKey = (value: string | Date): string => {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+        return value.slice(0, 10);
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
 const toNumberContributionLevel = (level: type.ContributionLevel): number => {
     switch (level) {
@@ -40,16 +52,10 @@ export const aggregateUserInfo = (
     }
 
     const user = response.data.user;
-    const calendar = user.contributionsCollection.contributionCalendar.weeks
-        .flatMap((week) => week.contributionDays)
-        .map((week) => ({
-            contributionCount: week.contributionCount,
-            contributionLevel: toNumberContributionLevel(
-                week.contributionLevel,
-            ),
-            date: new Date(week.date),
-        }));
     const contributesLanguage: { [language: string]: type.LangInfo } = {};
+    const languagesByDay: {
+        [date: string]: { [language: string]: type.LangInfo };
+    } = {};
     user.contributionsCollection.commitContributionsByRepository
         .filter((repo) => repo.repository.primaryLanguage)
         .forEach((repo) => {
@@ -67,6 +73,37 @@ export const aggregateUserInfo = (
                     contributions: contributions,
                 };
             }
+
+            for (const node of repo.contributions.nodes || []) {
+                const dayKey = toUtcDateKey(node.occurredAt);
+                if (!languagesByDay[dayKey]) {
+                    languagesByDay[dayKey] = {};
+                }
+                const dayLang = languagesByDay[dayKey][language];
+                if (dayLang) {
+                    dayLang.contributions += node.commitCount;
+                } else {
+                    languagesByDay[dayKey][language] = {
+                        language: language,
+                        color: color,
+                        contributions: node.commitCount,
+                    };
+                }
+            }
+        });
+    const calendar = user.contributionsCollection.contributionCalendar.weeks
+        .flatMap((week) => week.contributionDays)
+        .map((week) => {
+            const date = new Date(week.date);
+            const dayLangs = languagesByDay[toUtcDateKey(date)] || {};
+            return {
+                contributionCount: week.contributionCount,
+                contributionLevel: toNumberContributionLevel(
+                    week.contributionLevel,
+                ),
+                date,
+                languages: langColors.stackFromLangs(Object.values(dayLangs)),
+            };
         });
     const languages: Array<type.LangInfo> = Object.values(
         contributesLanguage,

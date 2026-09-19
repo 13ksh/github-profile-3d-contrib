@@ -1,8 +1,10 @@
 import * as d3 from 'd3';
 import * as util from './utils';
 import * as type from './type';
-import { languageStack } from './apply-language-colors';
-import type { LangLayer } from './apply-language-colors';
+import {
+    languagePatternId,
+    uniqueLanguageColors,
+} from './apply-language-colors';
 
 const ANGLE = 30;
 const DARKER_LEFT = 0.5;
@@ -209,27 +211,28 @@ export const addDefines = (
     if (!userInfo) {
         return;
     }
-    const stack = languageStack(userInfo);
+    const langs = uniqueLanguageColors(userInfo);
     const template = settings.contribPatterns[1] || settings.contribPatterns[0];
-    stack.forEach((layer, i) => {
+    langs.forEach((layer) => {
+        const id = languagePatternId(layer.language, layer.color);
         addLanguageBitmapPattern(
             defs,
             template.top,
-            `pattern_lang_${i}_top`,
+            `pattern_${id}_top`,
             layer.color,
             'top',
         );
         addLanguageBitmapPattern(
             defs,
             template.left,
-            `pattern_lang_${i}_left`,
+            `pattern_${id}_left`,
             layer.color,
             'left',
         );
         addLanguageBitmapPattern(
             defs,
             template.right,
-            `pattern_lang_${i}_right`,
+            `pattern_${id}_right`,
             layer.color,
             'right',
         );
@@ -307,17 +310,18 @@ const drawSolidBrick = (
             )} ${util.toFixed(scaleLeft)})`,
         );
     paintPanel(leftPanel, contribLevel, 'left', settings, date, week);
-    if (isAnimate && contribLevel !== 0) {
-        leftPanel
-            .append('animate')
-            .attr('attributeName', 'height')
-            .attr(
-                'values',
-                `${util.toFixed(3 / scaleLeft)};${util.toFixed(heightLeft)}`,
-            )
-            .attr('dur', '3s')
-            .attr('repeatCount', '1');
-    }
+        if (isAnimate && contribLevel !== 0) {
+            leftPanel
+                .append('animate')
+                .attr('attributeName', 'height')
+                .attr(
+                    'values',
+                    `${util.toFixed(3 / scaleLeft)};${util.toFixed(heightLeft)}`,
+                )
+                .attr('dur', '3s')
+                .attr('fill', 'freeze')
+                .attr('repeatCount', '1');
+        }
 
     const widthRight =
         settings.type === 'bitmap'
@@ -350,28 +354,57 @@ const drawSolidBrick = (
                 `${util.toFixed(3 / scaleRight)};${util.toFixed(heightRight)}`,
             )
             .attr('dur', '3s')
+            .attr('fill', 'freeze')
             .attr('repeatCount', '1');
     }
+};
+
+const animateFloorGrow = (
+    panel: d3.Selection<SVGRectElement, unknown, null, unknown>,
+    startY: number,
+    endY: number,
+    startHeight: number,
+    endHeight: number,
+): void => {
+    panel
+        .append('animate')
+        .attr('attributeName', 'y')
+        .attr('values', `${util.toFixed(startY)};${util.toFixed(endY)}`)
+        .attr('dur', '3s')
+        .attr('fill', 'freeze')
+        .attr('repeatCount', '1');
+    panel
+        .append('animate')
+        .attr('attributeName', 'height')
+        .attr(
+            'values',
+            `${util.toFixed(startHeight)};${util.toFixed(endHeight)}`,
+        )
+        .attr('dur', '3s')
+        .attr('fill', 'freeze')
+        .attr('repeatCount', '1');
 };
 
 const drawStackedLanguageBrick = (
     bar: d3.Selection<SVGGElement, unknown, null, unknown>,
     calHeight: number,
-    stack: LangLayer[],
+    stack: type.LangLayer[],
     settings: type.BitmapPatternSettings,
     dxx: number,
     dyy: number,
+    isAnimate: boolean,
 ): void => {
     const template = settings.contribPatterns[1] || settings.contribPatterns[0];
     const widthTop = Math.max(1, template.top.width);
-    const topLangIndex = stack.length - 1;
+    const topLayer = stack[stack.length - 1];
+    const topId = languagePatternId(topLayer.language, topLayer.color);
     bar.append('rect')
         .attr('stroke', 'none')
         .attr('x', 0)
         .attr('y', 0)
         .attr('width', util.toFixed(widthTop))
         .attr('height', util.toFixed(widthTop))
-        .attr('fill', `url(#pattern_lang_${topLangIndex}_top)`)
+        .attr('fill', `url(#pattern_${topId}_top)`)
         .attr(
             'transform',
             `skewY(${-ANGLE}) skewX(${util.toFixed(
@@ -385,34 +418,39 @@ const drawStackedLanguageBrick = (
     const scaleLeft = Math.sqrt(dxx ** 2 + dyy ** 2) / widthLeft;
     const widthRight = Math.max(1, template.right.width);
     const scaleRight = Math.sqrt(dxx ** 2 + dyy ** 2) / widthRight;
+    const startRatio = Math.min(1, 3 / calHeight);
 
     let yFromTop = 0;
     for (let i = stack.length - 1; i >= 0; i--) {
-        const layerHeight = calHeight * stack[i].ratio;
-        if (layerHeight < 0.05) {
-            yFromTop += layerHeight;
-            continue;
-        }
-        bar.append('rect')
+        const layer = stack[i];
+        const layerHeight = calHeight * layer.ratio;
+        const patternId = languagePatternId(layer.language, layer.color);
+        const leftY = yFromTop / scaleLeft;
+        const leftH = layerHeight / scaleLeft;
+        const rightY = yFromTop / scaleRight;
+        const rightH = layerHeight / scaleRight;
+        const leftPanel = bar
+            .append('rect')
             .attr('stroke', 'none')
             .attr('x', 0)
-            .attr('y', util.toFixed(yFromTop / scaleLeft))
+            .attr('y', util.toFixed(leftY))
             .attr('width', util.toFixed(widthLeft))
-            .attr('height', util.toFixed(layerHeight / scaleLeft))
-            .attr('fill', `url(#pattern_lang_${i}_left)`)
+            .attr('height', util.toFixed(leftH))
+            .attr('fill', `url(#pattern_${patternId}_left)`)
             .attr(
                 'transform',
                 `skewY(${ANGLE}) scale(${util.toFixed(
                     dxx / widthLeft,
                 )} ${util.toFixed(scaleLeft)})`,
             );
-        bar.append('rect')
+        const rightPanel = bar
+            .append('rect')
             .attr('stroke', 'none')
             .attr('x', 0)
-            .attr('y', util.toFixed(yFromTop / scaleRight))
+            .attr('y', util.toFixed(rightY))
             .attr('width', util.toFixed(widthRight))
-            .attr('height', util.toFixed(layerHeight / scaleRight))
-            .attr('fill', `url(#pattern_lang_${i}_right)`)
+            .attr('height', util.toFixed(rightH))
+            .attr('fill', `url(#pattern_${patternId}_right)`)
             .attr(
                 'transform',
                 `translate(${util.toFixed(dxx)} ${util.toFixed(
@@ -421,6 +459,22 @@ const drawStackedLanguageBrick = (
                     dxx / widthRight,
                 )} ${util.toFixed(scaleRight)})`,
             );
+        if (isAnimate) {
+            animateFloorGrow(
+                leftPanel,
+                leftY * startRatio,
+                leftY,
+                leftH * startRatio,
+                leftH,
+            );
+            animateFloorGrow(
+                rightPanel,
+                rightY * startRatio,
+                rightY,
+                rightH * startRatio,
+                rightH,
+            );
+        }
         yFromTop += layerHeight;
     }
 };
@@ -451,8 +505,6 @@ export const create3DContrib = (
 
     const offsetX = dx * 7;
     const offsetY = height - (weekcount + 7) * dy;
-    const stack = languageStack(userInfo);
-    const useLangStack = settings.type === 'bitmap' && stack.length > 0;
 
     const group = svg.append('g');
 
@@ -467,6 +519,7 @@ export const create3DContrib = (
         // ref. https://github.com/yoshi389111/github-profile-3d-contrib/issues/27
         const calHeight = Math.log10(cal.contributionCount / 20 + 1) * 144 + 3;
         const contribLevel = cal.contributionLevel;
+        const dayStack = cal.languages;
 
         const isAnimate = settings.growingAnimation || isForcedAnimation;
 
@@ -491,17 +544,19 @@ export const create3DContrib = (
                     )}`,
                 )
                 .attr('dur', '3s')
+                .attr('fill', 'freeze')
                 .attr('repeatCount', '1');
         }
 
-        if (settings.type === 'bitmap' && useLangStack && contribLevel !== 0) {
+        if (settings.type === 'bitmap' && dayStack.length > 0 && contribLevel !== 0) {
             drawStackedLanguageBrick(
                 bar,
                 calHeight,
-                stack,
+                dayStack,
                 settings,
                 dxx,
                 dyy,
+                isAnimate,
             );
         } else {
             drawSolidBrick(
